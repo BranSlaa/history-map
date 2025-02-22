@@ -75,6 +75,16 @@ const App: React.FC = () => {
 		setSelectedSubjects(subjects);
 	};
 
+	const fetchMoreEvents = () => {
+		fetchEventsCallback(
+			topic,
+			'',
+			yearRange[0],
+			yearRange[1],
+			selectedSubjects
+		);
+	};
+
 	return (
 		<div className="container">
 			{loading && (
@@ -84,13 +94,7 @@ const App: React.FC = () => {
 				className={`search-container ${searchVisible ? '' : 'hidden'}`}
 				onSubmit={e => {
 					e.preventDefault();
-					fetchEventsCallback(
-						topic,
-						'',
-						yearRange[0],
-						yearRange[1],
-						selectedSubjects
-					);
+					fetchMoreEvents();
 					setSearchVisible(false);
 				}}
 			>
@@ -113,6 +117,7 @@ const App: React.FC = () => {
 						events={events}
 						onSelectEvent={handleSelectEvent}
 					/>
+					<button onClick={fetchMoreEvents}>Fetch More Events</button>
 					<InformationPanel event={selectedEvent} />
 				</div>
 				<div className="main-app-container">
@@ -160,12 +165,6 @@ const App: React.FC = () => {
 									}
 									eventHandlers={{
 										click: () => {
-											fetchEventsCallback(
-												topic,
-												event.title,
-												event.year,
-												selectedSubjects
-											);
 											setHighlightedLocations(
 												prev =>
 													new Set([

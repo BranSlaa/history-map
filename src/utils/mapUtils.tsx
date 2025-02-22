@@ -19,10 +19,13 @@ export const fetchEvents = (
 		) => {
 			setLoading(true);
 			try {
+				console.log('yearMinOrNear', yearMinOrNear);
+				console.log('yearMax', yearMax);
+
 				let url = `http://127.0.0.1:8000/get_events?`;
 
 				if (topic) {
-					url += `topic=${encodeURIComponent(topic)}`;
+					url += `topic=${encodeURIComponent(topic)}&`;
 				}
 				if (title) {
 					url += `title=${encodeURIComponent(title)}&`;
@@ -34,7 +37,7 @@ export const fetchEvents = (
 					url += `yearMin=${yearMinOrNear}&yearMax=${yearMax}&`;
 				}
 				if (selectedSubjects) {
-					url += `subjects=${selectedSubjects.join(',')}&`;
+					url += `subjects=${selectedSubjects.join(',')}`;
 				}
 
 				const response = await fetch(url);
