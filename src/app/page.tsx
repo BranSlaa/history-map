@@ -1,12 +1,16 @@
 'use client';
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState } from 'react';
 import dynamic from 'next/dynamic';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
-import { useMap } from 'react-leaflet';
+import { Event } from '@/types/event';
+import EventPanel from './components/EventPanel';
+import InformationPanel from './components/InformationPanel';
+import SubjectFilterBar from './components/SubjectFilterBar';
+import { fetchEvents, AdjustMapView } from '@/utils/mapUtils';
 
 const MapContainer = dynamic(
 	() => import('react-leaflet').then(mod => mod.MapContainer),
@@ -23,14 +27,6 @@ const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), {
 	ssr: false,
 });
 
-interface Event {
-	title: string;
-	year: number;
-	lat: number;
-	lon: number;
-	info: string;
-}
-
 const defaultIcon = new L.Icon({
 	iconUrl: 'https://maps.google.com/mapfiles/ms/icons/blue-dot.png',
 	iconSize: [32, 32],
@@ -44,6 +40,7 @@ const selectedIcon = new L.Icon({
 });
 
 const App: React.FC = () => {
+	const [searchVisible, setSearchVisible] = useState<boolean>(true);
 	const [topic, setTopic] = useState<string>('');
 	const [events, setEvents] = useState<Event[]>([]);
 	const [highlightedLocations, setHighlightedLocations] = useState<
@@ -54,71 +51,47 @@ const App: React.FC = () => {
 		new Date().getFullYear(),
 	]);
 	const [loading, setLoading] = useState<boolean>(false);
-
-	const fetchEvents = useCallback(
-		async (
-			topic: string,
-			title: string,
-			yearMinOrNear: number,
-			yearMax?: number
-		) => {
-			setLoading(true);
-			try {
-				let url = `http://127.0.0.1:8000/get_events?`;
-
-				if (topic) {
-					url += `topic=${encodeURIComponent(topic)}`;
-				}
-				if (title) {
-					url += `title=${encodeURIComponent(title)}&`;
-				}
-				if (yearMinOrNear && !yearMax) {
-					url += `yearNear=${yearMinOrNear}&`;
-				}
-				if (yearMinOrNear && yearMax) {
-					url += `yearMin=${yearMinOrNear}&yearMax=${yearMax}&`;
-				}
-
-				const response = await fetch(url);
-				if (!response.ok) {
-					console.error('API request failed', response.statusText);
-					return;
-				}
-				const data = await response.json();
-
-				setEvents(prevEvents => [...prevEvents, ...data]);
-			} catch (error) {
-				console.error('Failed to fetch events:', error);
-			} finally {
-				setLoading(false);
-			}
-		},
-		[events]
+	const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+	const [selectedSubjects, setSelectedSubjects] = useState<string[]>([
+		'significant-events',
+		'great-people',
+		'important-places',
+		'scientific-discoveries',
+		'works-of-art',
+		'military-conflicts',
+	]);
+	const fetchEventsCallback = fetchEvents(
+		setLoading,
+		setEvents,
+		events,
+		selectedSubjects
 	);
 
-	const AdjustMapView: React.FC<{ events: Event[] }> = ({ events }) => {
-		const map = useMap();
+	const handleSelectEvent = (event: Event) => {
+		setSelectedEvent(event);
+	};
 
-		useEffect(() => {
-			if (events.length === 0) return;
-
-			const bounds = L.latLngBounds(
-				events.map(event => [event.lat, event.lon])
-			);
-			map.fitBounds(bounds, { padding: [50, 50] });
-		}, [events, map]);
-
-		return null;
+	const handleFilterChange = (subjects: string[]) => {
+		setSelectedSubjects(subjects);
 	};
 
 	return (
 		<div className="container">
-			{loading && <div className="loading-indicator">Loading...</div>}
+			{loading && (
+				<div className="loading-indicator">Loading. Please wait.</div>
+			)}
 			<form
-				className="search-container"
+				className={`search-container ${searchVisible ? '' : 'hidden'}`}
 				onSubmit={e => {
 					e.preventDefault();
-					fetchEvents(topic, '', yearRange[0], yearRange[1]);
+					fetchEventsCallback(
+						topic,
+						'',
+						yearRange[0],
+						yearRange[1],
+						selectedSubjects
+					);
+					setSearchVisible(false);
 				}}
 			>
 				<label className="search-label" htmlFor="topic">
@@ -128,67 +101,94 @@ const App: React.FC = () => {
 						id="topic"
 						name="topic"
 						value={topic}
+						placeholder="Search a Topic"
 						onChange={e => setTopic(e.target.value)}
 					/>
 				</label>
 				<button type="submit">Search</button>
-				<div className="range-container">
-					<label>
-						Year Range: {yearRange[0]} - {yearRange[1]}
-					</label>
-					<Slider
-						range
-						min={-7000}
-						max={new Date().getFullYear()}
-						step={5}
-						value={yearRange}
-						onChange={value => {
-							if (Array.isArray(value) && value.length === 2) {
-								setYearRange([value[0], value[1]]);
-							}
-						}}
-					/>
-				</div>
 			</form>
-			<MapContainer
-				center={[51.5074, -0.1276]}
-				zoom={2}
-				style={{ width: '100vw', height: '100vh' }}
-			>
-				<TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-				<AdjustMapView events={events} />
-				{events
-					.filter(
-						event =>
-							event.year >= yearRange[0] &&
-							event.year <= yearRange[1]
-					)
-					.map((event, index) => (
-						<Marker
-							key={`${event.title}-${event.year}-${index}`}
-							position={[event.lat, event.lon]}
-							icon={
-								highlightedLocations.has(event.title)
-									? selectedIcon
-									: defaultIcon
-							}
-							eventHandlers={{
-								click: () => {
-									fetchEvents(topic, event.title, event.year);
-									setHighlightedLocations(
-										prev => new Set([...prev, event.title])
-									);
-								},
+			<div className="main-app-window">
+				<div className="information-sidebar">
+					<EventPanel
+						events={events}
+						onSelectEvent={handleSelectEvent}
+					/>
+					<InformationPanel event={selectedEvent} />
+				</div>
+				<div className="main-app-container">
+					<div className="range-container">
+						<label>
+							Year Range: {yearRange[0]} - {yearRange[1]}
+						</label>
+						<Slider
+							range
+							min={-7000}
+							max={new Date().getFullYear()}
+							step={5}
+							value={yearRange}
+							onChange={value => {
+								if (
+									Array.isArray(value) &&
+									value.length === 2
+								) {
+									setYearRange([value[0], value[1]]);
+								}
 							}}
-						>
-							<Popup>
-								<h3>{event.title}</h3>
-								<p>{event.info}</p>
-								<h4>Event in {event.year}:</h4>
-							</Popup>
-						</Marker>
-					))}
-			</MapContainer>
+						/>
+					</div>
+					<MapContainer
+						center={[51.5074, -0.1276]}
+						zoom={2}
+						style={{ width: '100vw', height: '100vh' }}
+					>
+						<TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+						<AdjustMapView events={events} />
+						{events
+							.filter(
+								event =>
+									event.year >= yearRange[0] &&
+									event.year <= yearRange[1]
+							)
+							.map((event, index) => (
+								<Marker
+									key={`${event.title}-${event.year}-${index}`}
+									position={[event.lat, event.lon]}
+									icon={
+										highlightedLocations.has(event.title)
+											? selectedIcon
+											: defaultIcon
+									}
+									eventHandlers={{
+										click: () => {
+											fetchEventsCallback(
+												topic,
+												event.title,
+												event.year,
+												selectedSubjects
+											);
+											setHighlightedLocations(
+												prev =>
+													new Set([
+														...prev,
+														event.title,
+													])
+											);
+											setSelectedEvent(event);
+										},
+									}}
+								>
+									{/* <Popup>
+										<h3>{event.title}</h3>
+										<h4>Year:{event.year}:</h4>
+										<h4>Subject:{event.subject}:</h4>
+										<p>{event.info}</p>
+									</Popup> */}
+								</Marker>
+							))}
+					</MapContainer>
+					<SubjectFilterBar onFilterChange={handleFilterChange} />
+				</div>
+			</div>
 		</div>
 	);
 };
