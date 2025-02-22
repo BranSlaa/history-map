@@ -56,19 +56,27 @@ const App: React.FC = () => {
 	const [loading, setLoading] = useState<boolean>(false);
 
 	const fetchEvents = useCallback(
-		async (title: string, year: number, topic: string) => {
+		async (
+			topic: string,
+			title: string,
+			yearMinOrNear: number,
+			yearMax?: number
+		) => {
 			setLoading(true);
 			try {
 				let url = `http://127.0.0.1:8000/get_events?`;
 
+				if (topic) {
+					url += `topic=${encodeURIComponent(topic)}`;
+				}
 				if (title) {
 					url += `title=${encodeURIComponent(title)}&`;
 				}
-				if (year) {
-					url += `year=${year}&`;
+				if (yearMinOrNear && !yearMax) {
+					url += `yearNear=${yearMinOrNear}&`;
 				}
-				if (topic) {
-					url += `topic=${encodeURIComponent(topic)}`;
+				if (yearMinOrNear && yearMax) {
+					url += `yearMin=${yearMinOrNear}&yearMax=${yearMax}&`;
 				}
 
 				const response = await fetch(url);
@@ -77,7 +85,6 @@ const App: React.FC = () => {
 					return;
 				}
 				const data = await response.json();
-				console.log('Fetched Events:', data);
 
 				setEvents(prevEvents => [...prevEvents, ...data]);
 			} catch (error) {
@@ -111,14 +118,19 @@ const App: React.FC = () => {
 				className="search-container"
 				onSubmit={e => {
 					e.preventDefault();
-					fetchEvents('', 0, topic);
+					fetchEvents(topic, '', yearRange[0], yearRange[1]);
 				}}
 			>
-				<input
-					type="text"
-					value={topic}
-					onChange={e => setTopic(e.target.value)}
-				/>
+				<label className="search-label" htmlFor="topic">
+					Enter a topic to start:
+					<input
+						type="text"
+						id="topic"
+						name="topic"
+						value={topic}
+						onChange={e => setTopic(e.target.value)}
+					/>
+				</label>
 				<button type="submit">Search</button>
 				<div className="range-container">
 					<label>
@@ -162,7 +174,7 @@ const App: React.FC = () => {
 							}
 							eventHandlers={{
 								click: () => {
-									fetchEvents(event.title, event.year, topic);
+									fetchEvents(topic, event.title, event.year);
 									setHighlightedLocations(
 										prev => new Set([...prev, event.title])
 									);
