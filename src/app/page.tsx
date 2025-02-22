@@ -79,14 +79,14 @@ const App: React.FC = () => {
 				const data = await response.json();
 				console.log('Fetched Events:', data);
 
-				setEvents([...data, ...events]);
+				setEvents(prevEvents => [...prevEvents, ...data]);
 			} catch (error) {
 				console.error('Failed to fetch events:', error);
 			} finally {
 				setLoading(false);
 			}
 		},
-		[]
+		[events]
 	);
 
 	const AdjustMapView: React.FC<{ events: Event[] }> = ({ events }) => {
