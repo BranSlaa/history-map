@@ -172,10 +172,6 @@ input[type="range"] {
 	display: none;
 }
 
-.event-panel.visible {
-	display: block;
-}
-
 .event-panel .title-bar {
 	display: flex;
 	justify-content: space-between;
@@ -197,6 +193,7 @@ input[type="range"] {
 
 .event-panel.visible {
 	transform: translateY(-105%);
+	display: block;
 }
 
 .event-list-item {
@@ -320,8 +317,12 @@ input[type="range"] {
 		flex: 1 0 var(--sidebar-width);
 		padding: 0;
 		height: 50vh;
-		max-height: 50vh;
+		max-height: calc(50vh - 8rem);
 		display: block;
+	}
+
+	.event-list {
+		height: calc(50vh - 1rem);
 	}
 
 	.information-panel {

@@ -11,6 +11,7 @@ import EventPanel from './components/EventPanel';
 import InformationPanel from './components/InformationPanel';
 import SubjectFilterBar from './components/SubjectFilterBar';
 import { fetchEvents, AdjustMapView } from '@/utils/mapUtils';
+import { SignedIn, SignedOut, RedirectToSignIn } from '@clerk/clerk-react';
 
 const MapContainer = dynamic(
 	() => import('react-leaflet').then(mod => mod.MapContainer),
@@ -87,107 +88,120 @@ const App: React.FC = () => {
 
 	return (
 		<div className="container">
-			{loading && (
-				<div className="loading-indicator">Loading. Please wait.</div>
-			)}
-			<form
-				className={`search-container ${searchVisible ? '' : 'hidden'}`}
-				onSubmit={e => {
-					e.preventDefault();
-					fetchMoreEvents();
-					setSearchVisible(false);
-				}}
-			>
-				<label className="search-label" htmlFor="topic">
-					Enter a topic to start:
-					<input
-						type="text"
-						id="topic"
-						name="topic"
-						value={topic}
-						placeholder="Search a Topic"
-						onChange={e => setTopic(e.target.value)}
-					/>
-				</label>
-				<button type="submit">Search</button>
-			</form>
-			<div className="main-app-window">
-				<div className="information-sidebar">
-					<EventPanel
-						events={events}
-						onSelectEvent={handleSelectEvent}
-					/>
-					<button onClick={fetchMoreEvents}>Fetch More Events</button>
-					<InformationPanel event={selectedEvent} />
-				</div>
-				<div className="main-app-container">
-					<div className="range-container">
-						<label>
-							Year Range: {yearRange[0]} - {yearRange[1]}
-						</label>
-						<Slider
-							range
-							min={-7000}
-							max={new Date().getFullYear()}
-							step={5}
-							value={yearRange}
-							onChange={value => {
-								if (
-									Array.isArray(value) &&
-									value.length === 2
-								) {
-									setYearRange([value[0], value[1]]);
-								}
-							}}
-						/>
+			<SignedIn>
+				{loading && (
+					<div className="loading-indicator">
+						Loading. Please wait.
 					</div>
-					<MapContainer
-						center={[51.5074, -0.1276]}
-						zoom={2}
-						style={{ width: '100vw', height: '100vh' }}
-					>
-						<TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-						<AdjustMapView events={events} />
-						{events
-							.filter(
-								event =>
-									event.year >= yearRange[0] &&
-									event.year <= yearRange[1]
-							)
-							.map((event, index) => (
-								<Marker
-									key={`${event.title}-${event.year}-${index}`}
-									position={[event.lat, event.lon]}
-									icon={
-										highlightedLocations.has(event.title)
-											? selectedIcon
-											: defaultIcon
+				)}
+				<form
+					className={`search-container ${
+						searchVisible ? '' : 'hidden'
+					}`}
+					onSubmit={e => {
+						e.preventDefault();
+						fetchMoreEvents();
+						setSearchVisible(false);
+					}}
+				>
+					<label className="search-label" htmlFor="topic">
+						Enter a topic to start:
+						<input
+							type="text"
+							id="topic"
+							name="topic"
+							value={topic}
+							placeholder="Search a Topic"
+							onChange={e => setTopic(e.target.value)}
+						/>
+					</label>
+					<button type="submit">Search</button>
+				</form>
+				<div className="main-app-window">
+					<div className="information-sidebar">
+						<EventPanel
+							events={events}
+							onSelectEvent={handleSelectEvent}
+						/>
+						<button onClick={fetchMoreEvents}>
+							Fetch More Events
+						</button>
+						<InformationPanel event={selectedEvent} />
+					</div>
+					<div className="main-app-container">
+						<div className="range-container">
+							<label>
+								Year Range: {yearRange[0]} - {yearRange[1]}
+							</label>
+							<Slider
+								range
+								min={-7000}
+								max={new Date().getFullYear()}
+								step={5}
+								value={yearRange}
+								onChange={value => {
+									if (
+										Array.isArray(value) &&
+										value.length === 2
+									) {
+										setYearRange([value[0], value[1]]);
 									}
-									eventHandlers={{
-										click: () => {
-											setHighlightedLocations(
-												prev =>
-													new Set([
-														...prev,
-														event.title,
-													])
-											);
-											setSelectedEvent(event);
-										},
-									}}
-								>
-									{/* <Popup>
-										<h3>{event.title}</h3>
-										<h4>Year:{event.year}:</h4>
-										<h4>Subject:{event.subject}:</h4>
-										<p>{event.info}</p>
-									</Popup> */}
-								</Marker>
-							))}
-					</MapContainer>
-					<SubjectFilterBar onFilterChange={handleFilterChange} />
+								}}
+							/>
+						</div>
+						<MapContainer
+							center={[51.5074, -0.1276]}
+							zoom={2}
+							style={{ width: '100vw', height: '100vh' }}
+						>
+							<TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+							<AdjustMapView events={events} />
+							{events
+								.filter(
+									event =>
+										event.year >= yearRange[0] &&
+										event.year <= yearRange[1]
+								)
+								.map((event, index) => (
+									<Marker
+										key={`${event.title}-${event.year}-${index}`}
+										position={[event.lat, event.lon]}
+										icon={
+											highlightedLocations.has(
+												event.title
+											)
+												? selectedIcon
+												: defaultIcon
+										}
+										eventHandlers={{
+											click: () => {
+												setHighlightedLocations(
+													prev =>
+														new Set([
+															...prev,
+															event.title,
+														])
+												);
+												setSelectedEvent(event);
+											},
+										}}
+									>
+										{/* <Popup>
+											<h3>{event.title}</h3>
+											<h4>Year:{event.year}:</h4>
+											<h4>Subject:{event.subject}:</h4>
+											<p>{event.info}</p>
+										</Popup> */}
+									</Marker>
+								))}
+						</MapContainer>
+						<SubjectFilterBar onFilterChange={handleFilterChange} />
+					</div>
 				</div>
-			</div>
+			</SignedIn>
+			<SignedOut>
+				<RedirectToSignIn />
+			</SignedOut>
 		</div>
 	);
 };
