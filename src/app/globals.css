@@ -1,3 +1,7 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 :root {
 --background: #ffffff;
 --foreground: #171717;
@@ -319,6 +323,7 @@ input[type="range"] {
 		height: 50vh;
 		max-height: calc(50vh - 8rem);
 		display: block;
+		overflow-y: auto
 	}
 
 	.event-list {

@@ -29,7 +29,8 @@ const EventPanel: React.FC<{
 				<ul className="event-list">
 					{events.map((event, index) => (
 						<li
-							key={`${event.title}-${event.year}-${index}-sidebar`}
+							key={`${event.id}`}
+							id={`${event.id}-sidebar`}
 							onClick={() => {
 								setSelectedEvent(event);
 								onSelectEvent(event);
