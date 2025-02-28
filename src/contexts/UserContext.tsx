@@ -7,7 +7,7 @@ import {
 	useState,
 	ReactNode,
 } from 'react';
-import { useAuth } from '@clerk/nextjs';
+import { useAuth, useUser as useClerkUser } from '@clerk/nextjs';
 import { User, SubscriptionTier } from '@/types/user';
 import {
 	createUser,
@@ -37,17 +37,18 @@ export function UserProvider({ children }: { children: ReactNode }) {
 		signOut,
 		getToken: getClerkToken,
 	} = useAuth();
+	const { user: clerkUser, isLoaded: isClerkUserLoaded } = useClerkUser();
 	const [user, setUser] = useState<User | null>(null);
 	const [isLoading, setIsLoading] = useState<boolean>(true);
 	const [error, setError] = useState<string | null>(null);
 
 	const syncUser = async () => {
-		if (!isLoaded) {
+		if (!isLoaded || !isClerkUserLoaded) {
 			console.log('Clerk not loaded yet');
 			return;
 		}
 
-		if (!isSignedIn || !userId) {
+		if (!isSignedIn || !userId || !clerkUser) {
 			console.log('User not signed in with Clerk');
 			setUser(null);
 			setIsLoading(false);
@@ -74,10 +75,53 @@ export function UserProvider({ children }: { children: ReactNode }) {
 				}
 
 				if (!backendToken) {
-					console.log('Failed to get backend token');
-					setUser(null);
-					setIsLoading(false);
-					return;
+					console.log('No backend token, attempting to create user');
+
+					// Get actual user details from Clerk - use Clerk's values directly
+					let username = clerkUser.username || userId;
+
+					// Get user's email from emailAddresses array
+					let email = '';
+					if (
+						clerkUser.emailAddresses &&
+						clerkUser.emailAddresses.length > 0
+					) {
+						email = clerkUser.emailAddresses[0].emailAddress;
+					}
+
+					console.log(
+						`Creating user with Clerk details: ${username}, ${email}`
+					);
+
+					// Create a new user with actual Clerk user details
+					const newUser = await createUser(
+						userId,
+						username,
+						email,
+						SubscriptionTier.SCHOLAR // Use SCHOLAR instead of STUDENT to match DB constraints
+					);
+
+					if (newUser) {
+						console.log('User created successfully:', newUser);
+						// Try to get a token again after user creation
+						if (clerkToken) {
+							backendToken = await fetchToken(userId, clerkToken);
+						}
+
+						if (!backendToken) {
+							console.log(
+								'Still failed to get backend token after creating user'
+							);
+							setUser(null);
+							setIsLoading(false);
+							return;
+						}
+					} else {
+						console.log('Failed to create user');
+						setUser(null);
+						setIsLoading(false);
+						return;
+					}
 				}
 			}
 
@@ -91,6 +135,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
 			}
 		} catch (err) {
 			console.error('Error syncing user:', err);
+			setError(
+				`Error syncing user: ${
+					err instanceof Error ? err.message : String(err)
+				}`
+			);
 			setUser(null);
 		} finally {
 			setIsLoading(false);
@@ -99,7 +148,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		syncUser();
-	}, [isLoaded, isSignedIn, userId]);
+	}, [isLoaded, isSignedIn, userId, isClerkUserLoaded]);
 
 	const logout = () => {
 		console.log('Logging out user');

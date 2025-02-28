@@ -1,7 +1,7 @@
 export enum SubscriptionTier {
-	STUDENT = 'student',
-	SCHOLAR = 'scholar',
-	HISTORIAN = 'historian',
+	STUDENT = 1,
+	SCHOLAR = 2,
+	HISTORIAN = 3,
 }
 
 export interface User {
