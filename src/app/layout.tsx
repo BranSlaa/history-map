@@ -36,7 +36,6 @@ export default function RootLayout({
 						className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white dark:bg-stone-900 text-stone-800 dark:text-amber-100 h-full`}
 					>
 						<ThemeProvider>
-							<Header />
 							<main>{children}</main>
 						</ThemeProvider>
 					</body>

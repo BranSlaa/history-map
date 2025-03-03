@@ -39,14 +39,15 @@ export function AuthProvider({
 	const [error, setError] = useState<string | null>(null);
 
 	const syncUser = async (sessionUser: SupabaseUser | null) => {
+		console.log('syncUser called with sessionUser:', sessionUser?.id);
 		setError(null);
 
-		if (!sessionUser) {
-			setUser(null);
-			return;
-		}
-
 		try {
+			if (!sessionUser) {
+				setUser(null);
+				return;
+			}
+
 			// Fetch user data from the database
 			const { data: userData, error: userError } = await supabase
 				.from('users')
@@ -90,37 +91,75 @@ export function AuthProvider({
 					err instanceof Error ? err.message : JSON.stringify(err)
 				}`,
 			);
+			setUser(null);
 		}
 	};
 
 	useEffect(() => {
+		let mounted = true;
+
 		const setupAuth = async () => {
-			setLoading(true);
+			try {
+				console.log('Setting up auth...');
+				setLoading(true);
 
-			// Get initial session
-			const {
-				data: { session },
-			} = await supabase.auth.getSession();
-			setAuthUser(session?.user || null);
-			await syncUser(session?.user || null);
+				// Get initial session
+				const {
+					data: { session },
+					error: sessionError,
+				} = await supabase.auth.getSession();
+				if (sessionError) throw sessionError;
 
-			setLoading(false);
+				console.log('Initial session:', session?.user?.id);
 
-			// Set up auth state change listener
-			const {
-				data: { subscription },
-			} = supabase.auth.onAuthStateChange(async (event, session) => {
-				setAuthUser(session?.user || null);
-				await syncUser(session?.user || null);
-			});
+				if (!mounted) return;
 
-			return () => subscription.unsubscribe();
+				// Set up auth state change listener first
+				const {
+					data: { subscription },
+				} = supabase.auth.onAuthStateChange(async (event, session) => {
+					console.log('Auth state change:', event, session?.user?.id);
+					if (!mounted) return;
+
+					if (session?.user) {
+						setAuthUser(session.user);
+						await syncUser(session.user);
+					} else {
+						setAuthUser(null);
+						setUser(null);
+					}
+				});
+
+				// Then handle initial session
+				if (session?.user) {
+					setAuthUser(session.user);
+					await syncUser(session.user);
+				} else {
+					setAuthUser(null);
+					setUser(null);
+				}
+
+				return () => {
+					subscription.unsubscribe();
+				};
+			} catch (error) {
+				console.error('Auth setup error:', error);
+				if (mounted) {
+					setError('Failed to initialize authentication');
+					setAuthUser(null);
+					setUser(null);
+				}
+			} finally {
+				if (mounted) {
+					setLoading(false);
+				}
+			}
 		};
 
-		const unsubscribe = setupAuth();
+		setupAuth();
 
 		return () => {
-			unsubscribe.then(unsub => unsub());
+			mounted = false;
 		};
 	}, []);
 

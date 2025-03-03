@@ -1,4 +1,3 @@
-import { useAuth } from '@clerk/clerk-react';
 import { SubscriptionTier, User } from '@/types/user';
 
 // Define API URL

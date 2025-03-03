@@ -1,6 +1,12 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, {
+	useState,
+	useEffect,
+	useRef,
+	useCallback,
+	useMemo,
+} from 'react';
 import dynamic from 'next/dynamic';
 import 'leaflet/dist/leaflet.css';
 import Slider from 'rc-slider';
@@ -10,15 +16,24 @@ import EventPanel from './components/EventPanel';
 import InformationPanel from './components/InformationPanel';
 import SubjectFilterBar from './components/SubjectFilterBar';
 import {
-	fetchEvents,
-	AdjustMapView,
 	markInteractedEvents,
-} from '@/utils/mapUtils';
+	createFetchLastEvent,
+	createUpdatePathData,
+	createFetchUserPathData,
+	addEventToList,
+	shouldShowWelcomeBack as shouldShowWelcomeBackUtil,
+} from '@/utils/eventUtils';
 import { useAuth } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import supabase from '@/lib/supabaseClient';
 import WelcomeBack from './components/WelcomeBack';
+import { Header } from './components/Header';
+import { AdjustMapView } from '@/components/map/AdjustMapView';
+import {
+	createMapIcons,
+	addMapMarkerStyles,
+	getEventMarkerIcon,
+} from '@/utils/mapUtils';
 
 // Import Leaflet components dynamically
 const MapContainer = dynamic(
@@ -36,7 +51,7 @@ const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), {
 	ssr: false,
 });
 
-const App: React.FC = () => {
+const App = () => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 
@@ -73,60 +88,16 @@ const App: React.FC = () => {
 	// Initialize Leaflet icons on the client side
 	useEffect(() => {
 		// Only import and initialize Leaflet on the client side
-		const L = require('leaflet');
+		const icons = createMapIcons();
+		defaultIcon.current = icons.defaultIcon;
+		selectedIcon.current = icons.selectedIcon;
+		interactedIcon.current = icons.interactedIcon;
 
-		defaultIcon.current = new L.Icon({
-			iconUrl:
-				'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-			iconSize: [25, 41],
-			iconAnchor: [12, 41],
-			popupAnchor: [1, -34],
-			shadowUrl:
-				'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-			shadowSize: [41, 41],
-		});
-
-		selectedIcon.current = new L.Icon({
-			iconUrl:
-				'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon-2x.png',
-			iconSize: [35, 57],
-			iconAnchor: [17, 57],
-			popupAnchor: [1, -34],
-			shadowUrl:
-				'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-			shadowSize: [41, 41],
-			className: 'selected-marker',
-		});
-
-		// Create a custom icon for interacted events
-		interactedIcon.current = new L.Icon({
-			iconUrl:
-				'https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png',
-			iconSize: [25, 41],
-			iconAnchor: [12, 41],
-			popupAnchor: [1, -34],
-			shadowUrl:
-				'https://unpkg.com/leaflet@1.7.1/dist/images/marker-shadow.png',
-			shadowSize: [41, 41],
-			className: 'interacted-marker',
-		});
-
-		// Add custom CSS for the markers
-		const style = document.createElement('style');
-		style.innerHTML = `
-			.interacted-marker {
-				filter: hue-rotate(100deg) brightness(1.1);
-			}
-			.selected-marker {
-				filter: brightness(1.3);
-				z-index: 1000 !important;
-			}
-		`;
-		document.head.appendChild(style);
+		// Add marker styles
+		addMapMarkerStyles();
 	}, []);
 
 	const { user, authUser, loading: authLoading } = useAuth();
-	const [searchVisible, setSearchVisible] = useState<boolean>(true);
 	const [topic, setTopic] = useState<string>('');
 	const [currentEvents, setCurrentEvents] = useState<Event[]>([]);
 	const [chosenEvents, setChosenEvents] = useState<Event[]>([]);
@@ -156,6 +127,33 @@ const App: React.FC = () => {
 	const [pathOptions, setPathOptions] = useState<Event[]>([]);
 	const [showWelcomeBack, setShowWelcomeBack] = useState<boolean>(true);
 	const [lastEvent, setLastEvent] = useState<Event | null>(null);
+
+	// Near the component state initialization, create the utility functions with supabase
+	const fetchLastEventFn = useMemo(
+		() => createFetchLastEvent(supabase),
+		[supabase],
+	);
+	const updatePathDataFn = useMemo(
+		() => createUpdatePathData(supabase),
+		[supabase],
+	);
+	const fetchUserPathDataFn = useMemo(
+		() => createFetchUserPathData(supabase),
+		[supabase],
+	);
+
+	// Utility function to check if an event already exists in any of our lists
+	const isEventAlreadyInLists = useCallback(
+		(eventId: string) => {
+			return (
+				currentEvents.some(e => e.id === eventId) ||
+				chosenEvents.some(e => e.id === eventId) ||
+				unchosenEvents.some(e => e.id === eventId)
+			);
+		},
+		[currentEvents, chosenEvents, unchosenEvents],
+	);
+
 	const fetchEventsCallback = useCallback(
 		async (
 			topic: string,
@@ -409,343 +407,76 @@ const App: React.FC = () => {
 		}, 100);
 	}, []);
 
-	// Function to update path data in database
+	// Replace the updatePathData function with a wrapper around the utility
 	const updatePathData = useCallback(async () => {
 		if (!user?.id) return;
+		return updatePathDataFn(
+			user.id,
+			chosenEvents,
+			unchosenEvents,
+			selectedEvent,
+			mountId,
+		);
+	}, [
+		user?.id,
+		chosenEvents,
+		unchosenEvents,
+		selectedEvent,
+		mountId,
+		updatePathDataFn,
+	]);
 
-		try {
-			// Convert events to IDs for storage if they're not already
-			const chosenEventIds = chosenEvents.map(event => event.id);
-			const unchosenEventIds = unchosenEvents.map(event => event.id);
-			const currentEventId = selectedEvent?.id;
-
-			console.log(`[${mountId.current}] Updating path data with:`, {
-				chosenEventIds,
-				unchosenEventIds,
-				currentEventId,
-			});
-
-			// Create path data object with both camelCase (client) and snake_case (database) properties
-			// to ensure compatibility
-			const pathData = {
-				chosenEvents: chosenEventIds,
-				chosen_events: chosenEventIds, // Store IDs for chosen events
-				unchosenEvents: unchosenEventIds,
-				unchosen_events: unchosenEventIds, // Store IDs for unchosen events
-				currentEventId,
-				current_event_id: currentEventId,
-			};
-
-			// Log the path data to be sent
-			console.log(
-				`[${mountId.current}] Path data to be sent:`,
-				JSON.stringify(pathData),
-			);
-
-			// Send directly to Supabase for more control and to see the result
-			const { data, error } = await supabase
-				.from('user_paths')
-				.upsert(
-					{
-						user_id: user.id,
-						path_data: pathData,
-						current_event_id: currentEventId,
-						updated_at: new Date().toISOString(),
-					},
-					{ onConflict: 'user_id' },
-				)
-				.select();
-
-			if (error) {
-				throw error;
-			}
-
-			console.log(
-				`[${mountId.current}] Updated path data in database:`,
-				data,
-			);
-		} catch (error) {
-			console.error(
-				`[${mountId.current}] Error updating path data:`,
-				error,
-			);
-		}
-	}, [user?.id, chosenEvents, unchosenEvents, selectedEvent, mountId]);
-
-	// Modify fetchUserPathData to take a parameter to control whether to set events
+	// Replace fetchUserPathData with a wrapper around the utility
 	const fetchUserPathData = useCallback(
 		async (setCurrentPathEvents = true) => {
 			if (!user?.id) return;
 
-			try {
-				const { data, error } = await supabase
-					.from('user_paths')
-					.select('*')
-					.eq('user_id', user.id)
-					.order('updated_at', { ascending: false })
-					.limit(1);
-
-				if (error) {
-					throw error;
-				}
-
-				if (data && data.length > 0 && data[0].path_data) {
-					const pathData = data[0].path_data;
-					console.log(
-						`[${mountId.current}] Retrieved path data:`,
-						pathData,
-					);
-
-					// Only set events if requested (not on initial load)
-					if (setCurrentPathEvents) {
-						// Handle both camelCase and snake_case property naming
-						const chosenEvents =
-							pathData.chosen_events || pathData.chosenEvents;
-						const unchosenEvents =
-							pathData.unchosen_events || pathData.unchosenEvents;
-						const currentEventId =
-							pathData.current_event_id ||
-							pathData.currentEventId;
-
-						console.log(
-							`[${mountId.current}] Setting path data - chosen events:`,
-							chosenEvents ? chosenEvents.length : 0,
-							'unchosen events:',
-							unchosenEvents ? unchosenEvents.length : 0,
-						);
-
-						// Set chosen and unchosen events
-						if (chosenEvents) {
-							// If it's an array of IDs, fetch the full events
-							if (
-								chosenEvents.length > 0 &&
-								typeof chosenEvents[0] === 'string'
-							) {
-								const { data: chosenEventsData } =
-									await supabase
-										.from('events')
-										.select('*')
-										.in('id', chosenEvents);
-
-								if (chosenEventsData) {
-									setChosenEvents(chosenEventsData);
-								}
-							} else {
-								// It's already an array of event objects
-								setChosenEvents(chosenEvents);
-							}
+			return fetchUserPathDataFn(
+				user.id,
+				mountId,
+				setCurrentPathEvents
+					? {
+							onChosenEvents: setChosenEvents,
+							onUnchosenEvents: setUnchosenEvents,
+							onCurrentEvents: setCurrentEvents,
 						}
-
-						if (unchosenEvents) {
-							// If it's an array of IDs, fetch the full events
-							if (
-								unchosenEvents.length > 0 &&
-								typeof unchosenEvents[0] === 'string'
-							) {
-								const { data: unchosenEventsData } =
-									await supabase
-										.from('events')
-										.select('*')
-										.in('id', unchosenEvents);
-
-								if (unchosenEventsData) {
-									setUnchosenEvents(unchosenEventsData);
-								}
-							} else {
-								// It's already an array of event objects
-								setUnchosenEvents(unchosenEvents);
-							}
-						}
-
-						// Set current events if there's a current event ID
-						if (currentEventId) {
-							let currentEvent;
-
-							// Try to find the event in chosen events first
-							if (chosenEvents) {
-								if (typeof chosenEvents[0] === 'string') {
-									// If chosen events is just an array of IDs, fetch the current event
-									const { data: eventData } = await supabase
-										.from('events')
-										.select('*')
-										.eq('id', currentEventId)
-										.single();
-
-									currentEvent = eventData;
-								} else {
-									// Find the event object in the array of objects
-									currentEvent = chosenEvents.find(
-										(e: any) => e.id === currentEventId,
-									);
-								}
-							}
-
-							if (currentEvent) {
-								// Set as selected event
-								setSelectedEvent(currentEvent);
-								// Add to current events
-								setCurrentEvents([currentEvent]);
-							}
-						}
-					}
-				} else {
-					console.log('No path data found for user');
-				}
-			} catch (error) {
-				console.error('Error fetching path data:', error);
-			}
+					: undefined,
+			);
 		},
-		[user?.id],
+		[
+			user?.id,
+			mountId,
+			fetchUserPathDataFn,
+			setChosenEvents,
+			setUnchosenEvents,
+			setCurrentEvents,
+		],
 	);
 
-	// Make fetchLastEvent a useCallback function
+	// Replace the shouldShowWelcomeBack function with the utility
+	const shouldShowWelcomeBack = (
+		lastEvent: Event | null,
+		currentEvents: Event[],
+	) => {
+		return shouldShowWelcomeBackUtil(
+			lastEvent,
+			currentEvents,
+			showWelcomeBack,
+		);
+	};
+
+	// Replace fetchLastEvent with a wrapper around the utility
 	const fetchLastEvent = useCallback(
 		async (userId: string) => {
-			try {
-				// Only log once per function call
-				console.log(`[${mountId.current}] Fetching last event...`);
-
-				// Get path data from the database
-				const { data: pathData, error: pathError } = await supabase
-					.from('user_paths')
-					.select('*')
-					.eq('user_id', userId)
-					.order('updated_at', { ascending: false })
-					.limit(1);
-
-				if (pathError) {
-					console.error(
-						`[${mountId.current}] Error fetching path data:`,
-						pathError,
-					);
-					return null;
-				}
-
-				if (!pathData || pathData.length === 0) {
-					console.log(`[${mountId.current}] No path data found`);
-					return null;
-				}
-
-				// Check for current_event_id in different levels of the data structure
-				let currentEventId =
-					// First check root level
-					pathData[0].current_event_id ||
-					// Then check path_data object
-					(pathData[0].path_data &&
-						pathData[0].path_data.current_event_id);
-
-				console.log(
-					`[${mountId.current}] Current event ID:`,
-					currentEventId,
-				);
-
-				// Check if we have chosen events
-				const chosenEvents =
-					pathData[0].path_data && pathData[0].path_data.chosen_events
-						? pathData[0].path_data.chosen_events
-						: [];
-
-				console.log(
-					`[${mountId.current}] Chosen events:`,
-					chosenEvents,
-				);
-
-				// Fallback: If no current event ID but we have chosen events, use the last chosen event
-				if (
-					!currentEventId &&
-					chosenEvents &&
-					chosenEvents.length > 0
-				) {
-					currentEventId = chosenEvents[chosenEvents.length - 1];
-					console.log(
-						`[${mountId.current}] Using last chosen event as fallback:`,
-						currentEventId,
-					);
-				}
-
-				if (!currentEventId) {
-					console.log(
-						`[${mountId.current}] No current event ID found in path data`,
-					);
-					return null;
-				}
-
-				// Fetch the event from the database
-				const { data: events, error } = await supabase
-					.from('events')
-					.select('*')
-					.eq('id', currentEventId)
-					.single();
-
-				if (error) {
-					console.error(
-						`[${mountId.current}] Error fetching last event:`,
-						error,
-					);
-					return null;
-				}
-
-				if (!events) {
-					console.log(
-						`[${mountId.current}] No event found with ID:`,
-						currentEventId,
-					);
-					return null;
-				}
-
-				console.log(
-					`[${mountId.current}] Last event found:`,
-					events.title,
-				);
-				// Don't set state inside this function, return the event instead
-				return events;
-			} catch (error) {
-				console.error(
-					`[${mountId.current}] Error in fetchLastEvent:`,
-					error,
-				);
-				return null;
+			const event = await fetchLastEventFn(userId, mountId);
+			if (event) {
+				setLastEvent(event);
+				setShowWelcomeBack(true);
 			}
+			return event;
 		},
-		[supabase, mountId],
+		[fetchLastEventFn, mountId, setLastEvent, setShowWelcomeBack],
 	);
-
-	// Fix the useEffect for initialization to avoid double calls
-	useEffect(() => {
-		if (user && isFirstMount.current) {
-			console.log(
-				`[${mountId.current}] Initializing with user:`,
-				user.id,
-			);
-			isFirstMount.current = false;
-
-			// Fetch last event for welcome back
-			fetchLastEvent(user.id)
-				.then(event => {
-					if (event) {
-						setLastEvent(event);
-						setShowWelcomeBack(true);
-						console.log(
-							`[${mountId.current}] Last event initialization complete: Found:`,
-							event.title,
-						);
-					} else {
-						console.log(
-							`[${mountId.current}] Last event initialization complete: No event found`,
-						);
-					}
-				})
-				.catch(err => {
-					console.error(
-						`[${mountId.current}] Error initializing last event:`,
-						err,
-					);
-				});
-
-			// Still fetch path data, but don't automatically set events
-			fetchUserPathData(false);
-		}
-	}, [user, fetchUserPathData, fetchLastEvent, mountId]);
 
 	// Record event interaction in database
 	const recordEventInteraction = async (
@@ -832,27 +563,6 @@ const App: React.FC = () => {
 			console.error('Error updating next event:', error);
 		}
 	};
-
-	// Utility function to check if an event already exists in any of our lists
-	const isEventAlreadyInLists = useCallback(
-		(eventId: string) => {
-			return (
-				currentEvents.some(e => e.id === eventId) ||
-				chosenEvents.some(e => e.id === eventId) ||
-				unchosenEvents.some(e => e.id === eventId) ||
-				selectedEvent?.id === eventId
-			);
-		},
-		[currentEvents, chosenEvents, unchosenEvents, selectedEvent],
-	);
-
-	// Utility to safely add an event to a list without duplicating
-	const addEventToList = useCallback((event: Event, list: Event[]) => {
-		if (!list.some(e => e.id === event.id)) {
-			return [...list, event];
-		}
-		return list;
-	}, []);
 
 	// Update handleSelectEvent to use these utilities
 	const handleSelectEvent = useCallback(
@@ -1027,16 +737,6 @@ const App: React.FC = () => {
 		event => event.year >= yearRange[0] && event.year <= yearRange[1],
 	);
 
-	const shouldShowWelcomeBack = (
-		lastEvent: Event | null,
-		currentEvents: Event[],
-	) => {
-		// Show welcome back if:
-		// 1. We have a last event
-		// 2. AND either we have no current events OR we haven't explicitly hidden it
-		return !!lastEvent && (currentEvents.length === 0 || showWelcomeBack);
-	};
-
 	const handleContinueExploration = useCallback(() => {
 		if (lastEvent) {
 			console.log('Continuing exploration with event:', lastEvent.title);
@@ -1160,233 +860,228 @@ const App: React.FC = () => {
 		return () => clearTimeout(logTimeout);
 	}, [showWelcomeBack, lastEvent, loading, currentEvents.length, mountId]);
 
-	if (authLoading) {
-		return (
-			<div className="container mx-auto p-6">
-				<div className="bg-amber-50 dark:bg-stone-900 border-2 border-amber-700 dark:border-amber-800 rounded-lg shadow-md fixed bottom-4 left-2 text-stone-800 dark:text-amber-100 py-3 px-4 z-10 pointer-events-none">
-					Loading user data. Please wait.
-				</div>
-			</div>
-		);
-	}
+	// Fix the useEffect for initialization to avoid double calls
+	useEffect(() => {
+		if (user && isFirstMount.current) {
+			console.log(
+				`[${mountId.current}] Initializing with user:`,
+				user.id,
+			);
+			isFirstMount.current = false;
 
-	if (!authUser) {
-		return (
-			<div className="container mx-auto p-6 flex flex-col items-center justify-center min-h-screen">
-				<div className="bg-amber-50 dark:bg-stone-900 border-2 border-amber-700 dark:border-amber-800 rounded-lg shadow-md p-8 max-w-lg">
-					<h1 className="text-3xl font-bold mb-6 text-center text-stone-800 dark:text-amber-100">
-						History Map
-					</h1>
-					<p className="mb-4 text-center text-stone-700 dark:text-amber-200">
-						Please sign in to explore the ancient world.
-					</p>
-					<div className="flex justify-center">
-						<Link
-							href="/login"
-							className="px-6 py-2 bg-amber-700 hover:bg-amber-800 text-white font-bold rounded-lg transition-colors"
-						>
-							Sign In
-						</Link>
-					</div>
-				</div>
-			</div>
-		);
-	}
+			// Fetch last event for welcome back
+			fetchLastEvent(user.id)
+				.then(event => {
+					if (event) {
+						console.log(
+							`[${mountId.current}] Last event initialization complete: Found:`,
+							event.title,
+						);
+					} else {
+						console.log(
+							`[${mountId.current}] Last event initialization complete: No event found`,
+						);
+					}
+				})
+				.catch(err => {
+					console.error(
+						`[${mountId.current}] Error initializing last event:`,
+						err,
+					);
+				});
+
+			// Still fetch path data, but don't automatically set events
+			fetchUserPathData(false);
+		}
+	}, [user, fetchLastEvent, fetchUserPathData, mountId]);
+
+	// Add this useEffect to debug the events
+	useEffect(() => {
+		console.log('Main events array updated, length:', events.length);
+		if (events.length > 0) {
+			console.log('Sample event:', events[0]);
+			console.log(
+				'Events with subjects:',
+				events.filter(e => e.subject).length,
+			);
+			console.log(
+				'Unique subjects:',
+				Array.from(
+					new Set(events.filter(e => e.subject).map(e => e.subject)),
+				),
+			);
+		}
+	}, [events]);
 
 	return (
-		<div className="container-fluid">
-			{/* Render welcome back when appropriate */}
-			{shouldShowWelcomeBack(lastEvent, currentEvents) && (
-				<WelcomeBack
-					lastEvent={lastEvent!}
-					onContinue={handleContinueExploration}
-					onNewSearch={handleNewSearch}
-				/>
-			)}
+		<div className="grid grid-cols-12 grid-rows-[auto_1fr_1fr] h-screen">
+			{/* Header row - spans all columns */}
+			<div className="col-span-12">
+				<Header />
+			</div>
 
-			{loading && (
-				<div className="bg-amber-50 dark:bg-stone-900 border-2 border-amber-700 dark:border-amber-800 rounded-lg shadow-md fixed bottom-4 left-2 text-stone-800 dark:text-amber-100 py-3 px-4 z-30 pointer-events-none flex items-center gap-2">
-					<div className="animate-spin h-4 w-4 border-2 border-amber-700 dark:border-amber-800 rounded-full border-t-transparent"></div>
-					<span>Loading. Please wait.</span>
-				</div>
-			)}
-
-			<div className="relative w-full h-[calc(100vh-4rem)]">
-				{/* Side panel */}
-				<div
-					className={`bg-amber-50/95 dark:bg-stone-900/95 backdrop-blur-md fixed top-16 h-[calc(100vh-4rem)] z-40 transition-all duration-300 border-r-2 border-amber-700 dark:border-amber-800 ${
-						isPanelCollapsed ? 'w-12 -left-2' : 'w-64 left-0'
-					}`}
-				>
+			{/* Sidebar - Event Panel */}
+			<div
+				className={`col-span-12  md:row-span-2 ${isPanelCollapsed ? 'md:col-span-1' : 'md:col-span-3'}  bg-white dark:bg-gray-800 shadow-lg relative`}
+			>
+				<div className="h-full flex">
+					<div className="p-2 flex-grow overflow-y-auto">
+						<div ref={eventPanelRef}>
+							<EventPanel
+								events={currentEvents}
+								selectedEvent={selectedEvent}
+								onSelectEvent={handleSelectEvent}
+								pathOptions={pathOptions}
+							/>
+							<InformationPanel
+								event={selectedEvent}
+								onFetchMore={fetchMoreEvents}
+							/>
+						</div>
+					</div>
 					<button
 						onClick={togglePanel}
-						className="h-10 w-10 rounded-full bg-amber-700 dark:bg-amber-800 text-white flex items-center justify-center absolute -right-5 top-4 z-10 hover:bg-amber-800 dark:hover:bg-amber-700 transition-colors"
+						className="bg-blue-600 hover:bg-blue-700 text-white w-12 flex items-center justify-center absolute right-0 top-1/2 transform -translate-y-1/2"
 					>
 						{isPanelCollapsed ? '→' : '←'}
 					</button>
+				</div>
+			</div>
 
-					<div
-						className={`p-4 ${
-							isPanelCollapsed ? 'opacity-0' : 'opacity-100'
-						} transition-opacity duration-300 h-full flex flex-col overflow-y-auto`}
-						ref={eventPanelRef}
-					>
-						<EventPanel
-							events={displayedEvents}
-							onSelectEvent={handleSelectEvent}
-							pathOptions={pathOptions}
-							selectedEvent={selectedEvent}
+			{/* Main map area */}
+			<div className="col-span-12 md:col-span-9 relative md:row-span-2">
+				{/* Welcome Back component - overlay on map */}
+				{shouldShowWelcomeBack(lastEvent, currentEvents) && (
+					<div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl flex justify-center items-center">
+						<WelcomeBack
+							lastEvent={lastEvent}
+							onContinue={handleContinueExploration}
+							onNewSearch={handleNewSearch}
+							fetchEventsCallback={fetchEventsCallback}
+							topic={topic}
+							setTopic={setTopic}
 						/>
-						<InformationPanel
-							event={selectedEvent}
-							onFetchMore={
-								selectedEvent ? fetchMoreEvents : undefined
+					</div>
+				)}
+
+				{/* Year filter slider - overlay on bottom of map */}
+				<div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-2xl">
+					<div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg px-4 py-8 mx-2">
+						<Slider
+							range
+							min={-10000}
+							max={2025}
+							defaultValue={[-10000, 2025]}
+							value={yearRange}
+							onChange={value =>
+								setYearRange(value as [number, number])
 							}
+							marks={{
+								'-10000': '10000 BCE',
+								'-5000': '5000 BCE',
+								'-2000': '2000 BCE',
+								'0': '0',
+								'1000': '1000 CE',
+								'2000': '2000 CE',
+							}}
 						/>
 					</div>
 				</div>
 
+				{/* Subject filter bar - overlay on left side of map */}
+				<div className="absolute bottom-4 left-4 z-20 w-fit">
+					<SubjectFilterBar
+						events={events}
+						onFilterChange={handleFilterChange}
+					/>
+				</div>
+
 				{/* Map container */}
-				<div className="w-full h-full relative">
-					<div className="bg-amber-50 dark:bg-stone-900 border-2 border-amber-700 dark:border-amber-800 rounded-lg shadow-md absolute top-4 left-[calc(16rem+1rem)] right-4 z-30 flex flex-col justify-center items-center gap-2 py-2 px-4">
-						<label className="text-stone-800 dark:text-amber-100">
-							Year Range: {yearRange[0]} - {yearRange[1]}
-						</label>
-						<Slider
-							range
-							min={-10000}
-							max={new Date().getFullYear()}
-							step={5}
-							value={yearRange}
-							onChange={value => {
-								if (
-									Array.isArray(value) &&
-									value.length === 2
-								) {
-									setYearRange([value[0], value[1]]);
-								}
-							}}
-						/>
-					</div>
-
-					{/* Search Toolbar - Collapsible */}
-					<div
-						className={`bg-amber-50 dark:bg-stone-900 border-2 border-amber-700 dark:border-amber-800 rounded-lg shadow-md absolute top-20 left-[calc(16rem+1rem)] right-4 z-30 transition-all duration-300 overflow-hidden ${
-							searchVisible
-								? 'py-3 px-4 max-h-32'
-								: 'max-h-8 py-1 px-4'
-						}`}
-					>
-						<div
-							className="w-full flex justify-between items-center cursor-pointer mb-2"
-							onClick={() => setSearchVisible(!searchVisible)}
+				<div className="h-full w-full">
+					<ClientOnly>
+						<MapContainer
+							center={[20, 0]}
+							zoom={2}
+							style={{ height: '100%', width: '100%' }}
+							className="z-0"
 						>
-							<span className="text-stone-800 dark:text-amber-100 font-semibold flex-grow text-center">
-								Search Historical Topics
-							</span>
-							<span className="text-amber-700 dark:text-amber-500">
-								{searchVisible ? '▲' : '▼'}
-							</span>
-						</div>
+							<TileLayer
+								url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+								attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+							/>
+							<AdjustMapView events={displayedEvents} />
+							{/* Use a Set to track rendered event IDs and prevent duplicates */}
+							{(() => {
+								// Create a Set to track which event IDs we've already rendered
+								const renderedEventIds = new Set();
 
-						<form
-							className={`flex flex-col gap-2 transition-opacity duration-300 ${
-								searchVisible
-									? 'opacity-100'
-									: 'opacity-0 pointer-events-none'
-							}`}
-							onSubmit={e => {
-								e.preventDefault();
-								fetchMoreEvents();
-							}}
-						>
-							<div className="flex gap-2">
-								<input
-									type="text"
-									id="topic"
-									name="topic"
-									value={topic}
-									placeholder="Search a Topic"
-									onChange={e => setTopic(e.target.value)}
-									className={`border border-amber-700 dark:border-amber-600 bg-amber-50 dark:bg-stone-800 p-2 rounded flex-grow text-stone-800 dark:text-amber-100 ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
-									disabled={loading}
-									ref={searchInputRefCallback}
-								/>
-								<button
-									type="submit"
-									className={`bg-amber-700 hover:bg-amber-800 text-white transition-colors p-2 rounded whitespace-nowrap ${loading ? 'opacity-70 cursor-not-allowed' : ''}`}
-									disabled={loading}
-								>
-									{loading ? (
-										<div className="flex items-center gap-1">
-											<div className="animate-spin h-4 w-4 border-2 border-white rounded-full border-t-transparent"></div>
-											<span>Searching...</span>
-										</div>
-									) : (
-										'Search'
-									)}
-								</button>
-							</div>
-						</form>
-					</div>
-
-					<MapContainer
-						center={[51.5074, -0.1276]}
-						zoom={3}
-						scrollWheelZoom={true}
-						className="leaflet-container"
-						attributionControl={true}
-						zoomControl={true}
-					>
-						{/* Using a working vintage-style map */}
-						<TileLayer
-							url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-							attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-						/>
-						<AdjustMapView events={displayedEvents} />
-						{displayedEvents.map((event, index) => (
-							<Marker
-								key={index}
-								position={[event.lat, event.lon]}
-								icon={
-									selectedEvent?.id === event.id
-										? selectedIcon.current
-										: event.interacted
-											? interactedIcon.current
-											: defaultIcon.current
-								}
-								eventHandlers={{
-									click: () => {
-										handleSelectEvent(event);
-										setIsPanelCollapsed(false);
-									},
-								}}
-							>
-								<Popup>
-									<div>
-										<h3 className="font-semibold">
-											{event.title}
-										</h3>
-										<p className="text-sm">{event.year}</p>
-										<p className="text-xs mt-1">
-											{event.subject}
-										</p>
-									</div>
-								</Popup>
-							</Marker>
-						))}
-					</MapContainer>
-
-					<div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-30">
-						<SubjectFilterBar
-							events={events}
-							onFilterChange={handleFilterChange}
-						/>
-					</div>
+								// Filter out duplicate events
+								return events
+									.filter(event => {
+										if (renderedEventIds.has(event.id)) {
+											return false; // Skip this event, it's a duplicate
+										}
+										renderedEventIds.add(event.id);
+										return true;
+									})
+									.map(event => (
+										<Marker
+											key={event.id}
+											position={[
+												event.lat || 0,
+												event.lon || 0,
+											]}
+											icon={getEventMarkerIcon(
+												event,
+												selectedEvent?.id || null,
+												interactedEventIds,
+												{
+													defaultIcon:
+														defaultIcon.current,
+													selectedIcon:
+														selectedIcon.current,
+													interactedIcon:
+														interactedIcon.current,
+												},
+											)}
+											eventHandlers={{
+												click: () => {
+													handleSelectEvent(event);
+												},
+											}}
+										>
+											<Popup>
+												<div>
+													<h3 className="font-bold">
+														{event.title}
+													</h3>
+													<p>{event.year}</p>
+												</div>
+											</Popup>
+										</Marker>
+									));
+							})()}
+						</MapContainer>
+					</ClientOnly>
 				</div>
 			</div>
 		</div>
 	);
+};
+
+// Add ClientOnly component at the top level of your file
+const ClientOnly = ({ children }: { children: React.ReactNode }) => {
+	const [hasMounted, setHasMounted] = useState(false);
+
+	useEffect(() => {
+		setHasMounted(true);
+	}, []);
+
+	if (!hasMounted) {
+		return null;
+	}
+
+	return <>{children}</>;
 };
 
 export default App;
