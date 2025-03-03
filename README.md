@@ -1,131 +1,183 @@
-# History Map Application
+# Supabase CLI (v1)
 
-An interactive historical map application.
+[![Coverage Status](https://coveralls.io/repos/github/supabase/cli/badge.svg?branch=main)](https://coveralls.io/github/supabase/cli?branch=main) [![Bitbucket Pipelines](https://img.shields.io/bitbucket/pipelines/supabase-cli/setup-cli/master?style=flat-square&label=Bitbucket%20Canary)](https://bitbucket.org/supabase-cli/setup-cli/pipelines) [![Gitlab Pipeline Status](https://img.shields.io/gitlab/pipeline-status/sweatybridge%2Fsetup-cli?label=Gitlab%20Canary)
+](https://gitlab.com/sweatybridge/setup-cli/-/pipelines)
 
-## Features
+[Supabase](https://supabase.io) is an open source Firebase alternative. We're building the features of Firebase using enterprise-grade open source tools.
 
--   **Interactive Historical Map**: Explore historical events, people, and places on a dynamic map
--   **Vector Search**: Advanced semantic search using Pinecone
--   **User Authentication**: Secure login with Clerk and JWT tokens
--   **Subscription Tiers**:
-    -   Student: Basic access to maps and events
-    -   Scholar: Enhanced access with advanced search features
-    -   Historian: Full access with data analysis capabilities
--   **Responsive Design**: Works on desktop and mobile devices
+This repository contains all the functionality for Supabase CLI.
 
-## Technology Stack
+- [x] Running Supabase locally
+- [x] Managing database migrations
+- [x] Creating and deploying Supabase Functions
+- [x] Generating types directly from your database schema
+- [x] Making authenticated HTTP requests to [Management API](https://supabase.com/docs/reference/api/introduction)
 
--   **Frontend**: Next.js with React, TypeScript
--   **Backend**: FastAPI (Python)
--   **Authentication**: Clerk + JWT for backend API protection
--   **Vector Database**: Pinecone
--   **Database**: PostgreSQL
--   **Styling**: CSS with Tailwind
+## Getting started
 
-## Getting Started
+### Install the CLI
 
-### Prerequisites
-
--   Node.js 18+ and npm
--   Python 3.9+
--   PostgreSQL
--   Clerk account
--   Pinecone account
--   OpenAI API key
-
-### Environment Variables
-
-Create a `.env.local` file in the root directory with:
-
-```
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=your_clerk_pub_key
-CLERK_SECRET_KEY=your_clerk_secret_key
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-And a `.env` file for the backend with:
-
-```
-OPENAI_API_KEY=your_openai_api_key
-PINECONE_API_KEY=your_pinecone_api_key
-PINECONE_INDEX_NAME=history-map
-JWT_SECRET=your_secret_key
-DATABASE_URL=postgresql://user:password@localhost:5432/history_map_db
-```
-
-### Installation
-
-1. **Frontend (Next.js)**
+Available via [NPM](https://www.npmjs.com) as dev dependency. To install:
 
 ```bash
-npm install
-npm run dev
+npm i supabase --save-dev
 ```
 
-2. **Backend (FastAPI)**
+To install the beta release channel:
 
 ```bash
-pip install -r requirements.txt
-uvicorn main:app --reload
+npm i supabase@beta --save-dev
 ```
 
-## Usage
-
-1. Sign up or sign in with Clerk
-2. The application will automatically create a backend user for you with Student tier
-3. Explore the interactive map by searching for historical topics
-4. View your profile and upgrade your subscription tier as needed
-5. Access advanced search features (Scholar tier) and data analysis (Historian tier)
-
-## Subscription Features
-
-### Student Tier
-
--   Basic map viewing
--   Limited event search results
--   Access to main timeline features
-
-### Scholar Tier
-
--   All Student features
--   Advanced semantic search
--   More search results
--   AI-generated event suggestions
-
-### Historian Tier
-
--   All Scholar features
--   Historical data analysis
--   Maximum search results
--   Premium data access
-
-## Project Structure
+When installing with yarn 4, you need to disable experimental fetch with the following nodejs config.
 
 ```
-history-map/
-├── src/                 # Frontend source code
-│   ├── app/             # Next.js pages and components
-│   ├── contexts/        # React contexts for state management
-│   ├── types/           # TypeScript type definitions
-│   └── utils/           # Utility functions
-├── backend/             # FastAPI backend service
-│   ├── models/          # Pydantic models
-│   ├── routes/          # API endpoints
-│   └── services/        # Business logic
-└── database/            # Database migration scripts
+NODE_OPTIONS=--no-experimental-fetch yarn add supabase
 ```
 
-## Learn More
+> **Note**
+For Bun versions below v1.0.17, you must add `supabase` as a [trusted dependency](https://bun.sh/guides/install/trusted) before running `bun add -D supabase`.
 
-To learn more about Next.js, take a look at the following resources:
+<details>
+  <summary><b>macOS</b></summary>
 
--   [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
--   [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+  Available via [Homebrew](https://brew.sh). To install:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+  ```sh
+  brew install supabase/tap/supabase
+  ```
 
-## Deploy on Vercel
+  To install the beta release channel:
+  
+  ```sh
+  brew install supabase/tap/supabase-beta
+  brew link --overwrite supabase-beta
+  ```
+  
+  To upgrade:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+  ```sh
+  brew upgrade supabase
+  ```
+</details>
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+<details>
+  <summary><b>Windows</b></summary>
+
+  Available via [Scoop](https://scoop.sh). To install:
+
+  ```powershell
+  scoop bucket add supabase https://github.com/supabase/scoop-bucket.git
+  scoop install supabase
+  ```
+
+  To upgrade:
+
+  ```powershell
+  scoop update supabase
+  ```
+</details>
+
+<details>
+  <summary><b>Linux</b></summary>
+
+  Available via [Homebrew](https://brew.sh) and Linux packages.
+
+  #### via Homebrew
+
+  To install:
+
+  ```sh
+  brew install supabase/tap/supabase
+  ```
+
+  To upgrade:
+
+  ```sh
+  brew upgrade supabase
+  ```
+
+  #### via Linux packages
+
+  Linux packages are provided in [Releases](https://github.com/supabase/cli/releases). To install, download the `.apk`/`.deb`/`.rpm`/`.pkg.tar.zst` file depending on your package manager and run the respective commands.
+
+  ```sh
+  sudo apk add --allow-untrusted <...>.apk
+  ```
+
+  ```sh
+  sudo dpkg -i <...>.deb
+  ```
+
+  ```sh
+  sudo rpm -i <...>.rpm
+  ```
+
+  ```sh
+  sudo pacman -U <...>.pkg.tar.zst
+  ```
+</details>
+
+<details>
+  <summary><b>Other Platforms</b></summary>
+
+  You can also install the CLI via [go modules](https://go.dev/ref/mod#go-install) without the help of package managers.
+
+  ```sh
+  go install github.com/supabase/cli@latest
+  ```
+
+  Add a symlink to the binary in `$PATH` for easier access:
+
+  ```sh
+  ln -s "$(go env GOPATH)/bin/cli" /usr/bin/supabase
+  ```
+
+  This works on other non-standard Linux distros.
+</details>
+
+<details>
+  <summary><b>Community Maintained Packages</b></summary>
+
+  Available via [pkgx](https://pkgx.sh/). Package script [here](https://github.com/pkgxdev/pantry/blob/main/projects/supabase.com/cli/package.yml).
+  To install in your working directory:
+
+  ```bash
+  pkgx install supabase
+  ```
+
+  Available via [Nixpkgs](https://nixos.org/). Package script [here](https://github.com/NixOS/nixpkgs/blob/master/pkgs/development/tools/supabase-cli/default.nix).
+</details>
+
+### Run the CLI
+
+```bash
+supabase bootstrap
+```
+
+Or using npx:
+
+```bash
+npx supabase bootstrap
+```
+
+The bootstrap command will guide you through the process of setting up a Supabase project using one of the [starter](https://github.com/supabase-community/supabase-samples/blob/main/samples.json) templates.
+
+## Docs
+
+Command & config reference can be found [here](https://supabase.com/docs/reference/cli/about).
+
+## Breaking changes
+
+We follow semantic versioning for changes that directly impact CLI commands, flags, and configurations.
+
+However, due to dependencies on other service images, we cannot guarantee that schema migrations, seed.sql, and generated types will always work for the same CLI major version. If you need such guarantees, we encourage you to pin a specific version of CLI in package.json.
+
+## Developing
+
+To run from source:
+
+```sh
+# Go >= 1.22
+go run . help
+```

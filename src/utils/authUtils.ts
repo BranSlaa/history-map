@@ -30,7 +30,7 @@ export const isAuthenticated = (): boolean => {
 // Get JWT token from backend
 export const fetchToken = async (
 	clerkId: string,
-	clerkToken?: string
+	clerkToken?: string,
 ): Promise<string | null> => {
 	try {
 		if (typeof window === 'undefined') {
@@ -51,7 +51,7 @@ export const fetchToken = async (
 			console.error(
 				'Token fetch failed:',
 				response.status,
-				response.statusText
+				response.statusText,
 			);
 			return null;
 		}
@@ -73,7 +73,7 @@ export const fetchCurrentUser = async (): Promise<User | null> => {
 	try {
 		console.log(
 			'Fetching current user with token:',
-			token.substring(0, 15) + '...'
+			token.substring(0, 15) + '...',
 		);
 		const response = await fetch(`${API_URL}/users/me`, {
 			headers: {
@@ -87,7 +87,7 @@ export const fetchCurrentUser = async (): Promise<User | null> => {
 			console.error(
 				'User fetch failed:',
 				response.status,
-				response.statusText
+				response.statusText,
 			);
 			if (response.status === 401) {
 				console.log('Removing invalid token');
@@ -105,7 +105,7 @@ export const fetchCurrentUser = async (): Promise<User | null> => {
 
 // Update user subscription tier
 export const updateUserTier = async (
-	tier: SubscriptionTier
+	tier: SubscriptionTier,
 ): Promise<User | null> => {
 	const token = getToken();
 	if (!token) return null;
@@ -126,7 +126,7 @@ export const updateUserTier = async (
 			console.error(
 				'Tier update failed:',
 				response.status,
-				response.statusText
+				response.statusText,
 			);
 			return null;
 		}
@@ -143,7 +143,7 @@ export const createUser = async (
 	clerkId: string,
 	username: string,
 	email: string,
-	tier: SubscriptionTier = SubscriptionTier.STUDENT
+	tier: SubscriptionTier = SubscriptionTier.STUDENT,
 ): Promise<User | null> => {
 	try {
 		console.log('Creating new user with clerk ID:', clerkId);
@@ -165,7 +165,7 @@ export const createUser = async (
 			console.error(
 				'User creation failed:',
 				response.status,
-				response.statusText
+				response.statusText,
 			);
 			return null;
 		}

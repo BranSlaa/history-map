@@ -1,113 +1,60 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Event } from '@/types/event';
 
 const SubjectFilterBar: React.FC<{
-	onFilterChange: (selectedSubjects: string[]) => void;
-}> = ({ onFilterChange }) => {
-	const [showSubjects, setShowSubjects] = useState(false);
-	const [selectedSubjects, setSelectedSubjects] = useState<string[]>([
-		'significant-events',
-		'great-people',
-		'important-places',
-		'scientific-discoveries',
-		'works-of-art',
-		'military-conflicts',
-	]);
+	events: Event[];
+	onFilterChange: (selectedSubject: string | null) => void;
+}> = ({ events, onFilterChange }) => {
+	const [showDropdown, setShowDropdown] = useState(false);
+	const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
 
-	const handleCheckboxChange = (subject: string) => {
-		setSelectedSubjects(prev =>
-			prev.includes(subject)
-				? prev.filter(s => s !== subject)
-				: [...prev, subject]
-		);
-	};
+	// Extract unique subjects from events
+	const uniqueSubjects = Array.from(
+		new Set(events.map(event => event.subject)),
+	)
+		.filter(Boolean)
+		.sort();
+
+	const handleSelectChange = useCallback(
+		(e: React.ChangeEvent<HTMLSelectElement>) => {
+			const value = e.target.value;
+			setSelectedSubject(value === 'all' ? null : value);
+		},
+		[],
+	);
 
 	useEffect(() => {
-		onFilterChange(selectedSubjects);
-	}, [selectedSubjects, onFilterChange]);
+		onFilterChange(selectedSubject);
+	}, [selectedSubject, onFilterChange]);
 
 	return (
 		<div
-			className={`subject-filter-bar ${
-				showSubjects ? 'visible' : 'hidden'
-			}`}
+			className={`bg-amber-50 dark:bg-stone-900 border-2 border-amber-700 dark:border-amber-800 rounded-lg shadow-md flex gap-3 p-3 justify-between items-center z-10 transition-transform duration-300 ease-in-out ${
+				!showDropdown ? 'translate-x-[calc(100%-5rem)]' : ''
+			} md:transform-none md:justify-center md:w-auto md:mx-auto`}
 		>
 			<button
-				className="toggle-button"
-				onClick={() => setShowSubjects(!showSubjects)}
+				className="md:hidden h-10 w-10 rounded-full bg-amber-700 dark:bg-amber-800 text-white flex items-center justify-center"
+				onClick={() => setShowDropdown(!showDropdown)}
 			>
-				<span className="toggle-button-text">
-					{showSubjects ? 'Hide' : 'Show'}
-				</span>
+				<span>{showDropdown ? '×' : '⋯'}</span>
 			</button>
-			<div className="subject-filter-bar-content">
-				<label>
-					<input
-						type="checkbox"
-						name="significant-events"
-						checked={selectedSubjects.includes(
-							'significant-events'
-						)}
-						onChange={() =>
-							handleCheckboxChange('significant-events')
-						}
-					/>
-					Events
+			<div className="flex gap-3">
+				<label className="flex gap-2 items-center whitespace-nowrap text-sm text-stone-800 dark:text-amber-100">
+					Filter by Subject:
 				</label>
-				<label>
-					<input
-						type="checkbox"
-						name="great-people"
-						checked={selectedSubjects.includes('great-people')}
-						onChange={() => handleCheckboxChange('great-people')}
-					/>
-					People
-				</label>
-				<label>
-					<input
-						type="checkbox"
-						name="important-places"
-						checked={selectedSubjects.includes('important-places')}
-						onChange={() =>
-							handleCheckboxChange('important-places')
-						}
-					/>
-					Places
-				</label>
-				<label>
-					<input
-						type="checkbox"
-						name="scientific-discoveries"
-						checked={selectedSubjects.includes(
-							'scientific-discoveries'
-						)}
-						onChange={() =>
-							handleCheckboxChange('scientific-discoveries')
-						}
-					/>
-					Scientific Discoveries
-				</label>
-				<label>
-					<input
-						type="checkbox"
-						name="works-of-art"
-						checked={selectedSubjects.includes('works-of-art')}
-						onChange={() => handleCheckboxChange('works-of-art')}
-					/>
-					Works of Art
-				</label>
-				<label>
-					<input
-						type="checkbox"
-						name="military-conflicts"
-						checked={selectedSubjects.includes(
-							'military-conflicts'
-						)}
-						onChange={() =>
-							handleCheckboxChange('military-conflicts')
-						}
-					/>
-					Military Conflicts
-				</label>
+				<select
+					value={selectedSubject || 'all'}
+					onChange={handleSelectChange}
+					className="bg-amber-50 dark:bg-stone-800 border border-amber-700 dark:border-amber-600 text-stone-800 dark:text-amber-100 rounded p-1"
+				>
+					<option value="all">All Subjects</option>
+					{uniqueSubjects.map(subject => (
+						<option key={subject} value={subject}>
+							{subject}
+						</option>
+					))}
+				</select>
 			</div>
 		</div>
 	);

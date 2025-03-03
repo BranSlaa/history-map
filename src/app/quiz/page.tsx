@@ -52,7 +52,7 @@ const QuizDashboard: React.FC = () => {
 
 				if (!response.ok) {
 					throw new Error(
-						`Failed to fetch quizzes: ${response.statusText}`
+						`Failed to fetch quizzes: ${response.statusText}`,
 					);
 				}
 
@@ -75,7 +75,7 @@ const QuizDashboard: React.FC = () => {
 	const hasAccess =
 		user &&
 		[SubscriptionTier.SCHOLAR, SubscriptionTier.HISTORIAN].includes(
-			user.subscription_tier as SubscriptionTier
+			user.subscription_tier as SubscriptionTier,
 		);
 
 	// Helper function to get difficulty badge color
@@ -229,7 +229,7 @@ const QuizDashboard: React.FC = () => {
 																<div className="flex items-center space-x-3">
 																	<span
 																		className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getDifficultyColor(
-																			quiz.difficulty
+																			quiz.difficulty,
 																		)}`}
 																	>
 																		<Award className="h-3 w-3 mr-1" />
@@ -240,9 +240,9 @@ const QuizDashboard: React.FC = () => {
 																	<span className="text-xs text-slate-500 flex items-center">
 																		<Clock className="h-3 w-3 mr-1" />
 																		{new Date(
-																			quiz.created_at
+																			quiz.created_at,
 																		).toLocaleDateString(
-																			'en-CA'
+																			'en-CA',
 																		)}
 																	</span>
 																</div>

@@ -6,11 +6,15 @@ export enum SubscriptionTier {
 
 export interface User {
 	id: string;
-	clerk_id: string;
-	username: string;
 	email: string;
+	username: string;
 	subscription_tier: SubscriptionTier;
 	created_at?: string;
+	last_sign_in_at?: string;
+}
+
+export interface UserMetadata {
+	subscription_tier: SubscriptionTier;
 }
 
 export interface TokenData {

@@ -19,5 +19,13 @@
 		"version_control": "Follow Git best practices with feature branching and PR reviews.",
 		"documentation": "Maintain clear comments and README updates for all components.",
 		"testing": "Ensure unit and integration tests for critical functionalities."
-	}
+	},
+	"aiRules": [
+		{
+			"name": "no-explanatory-comments",
+			"description": "Do not add explanatory comments describing the intent behind code changes",
+			"pattern": "/* All custom CSS|// Explanation:|// This change|// Added to|// Modified to|// Updated to|// Removed|// Changed|// Note:|// For clarity|// We're|// I'm|// This is",
+			"message": "Do not add explanatory comments to code. Keep code clean and focused on implementation only."
+		}
+	]
 }

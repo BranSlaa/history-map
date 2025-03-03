@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 		if (!body.title || !body.description || !body.difficulty) {
 			return NextResponse.json(
 				{ error: 'Missing required fields' },
-				{ status: 400 }
+				{ status: 400 },
 			);
 		}
 
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
 		console.error('Error creating quiz:', error);
 		return NextResponse.json(
 			{ error: 'Failed to create quiz' },
-			{ status: 500 }
+			{ status: 500 },
 		);
 	}
 }

@@ -1,16 +1,11 @@
 import type { Metadata } from 'next';
 import { Geist, Geist_Mono } from 'next/font/google';
-import {
-	ClerkProvider,
-	SignInButton,
-	SignUpButton,
-	SignedIn,
-	SignedOut,
-	UserButton,
-} from '@clerk/nextjs';
 import { UserProvider } from '@/contexts/UserContext';
-import Link from 'next/link';
+import { ThemeProvider } from '@/contexts/ThemeContext';
+import { AuthProvider } from '@/context/AuthContext';
+import { Header } from './components/Header';
 import './globals.css';
+import './output.css';
 
 const geistSans = Geist({
 	variable: '--font-geist-sans',
@@ -34,61 +29,19 @@ export default function RootLayout({
 	children: React.ReactNode;
 }>) {
 	return (
-		<ClerkProvider>
+		<AuthProvider>
 			<UserProvider>
-				<html lang="en">
+				<html lang="en" className="h-full">
 					<body
-						className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+						className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white dark:bg-stone-900 text-stone-800 dark:text-amber-100 h-full`}
 					>
-						<header className="flex justify-between items-center p-4 h-16 bg-white shadow-sm">
-							<div className="flex items-center">
-								<Link
-									href="/"
-									className="text-xl font-bold mr-8"
-								>
-									History Map
-								</Link>
-								<nav className="hidden md:flex space-x-6">
-									<Link
-										href="/"
-										className="hover:text-blue-600 transition-colors"
-									>
-										Map
-									</Link>
-									<Link
-										href="/scholar/advanced-search"
-										className="hover:text-blue-600 transition-colors"
-									>
-										Advanced Search
-									</Link>
-									<Link
-										href="/historian/data-analysis"
-										className="hover:text-blue-600 transition-colors"
-									>
-										Data Analysis
-									</Link>
-									<Link
-										href="/profile"
-										className="hover:text-blue-600 transition-colors"
-									>
-										Profile
-									</Link>
-								</nav>
-							</div>
-							<div className="flex items-center gap-4">
-								<SignedOut>
-									<SignInButton />
-									<SignUpButton />
-								</SignedOut>
-								<SignedIn>
-									<UserButton />
-								</SignedIn>
-							</div>
-						</header>
-						{children}
+						<ThemeProvider>
+							<Header />
+							<main>{children}</main>
+						</ThemeProvider>
 					</body>
 				</html>
 			</UserProvider>
-		</ClerkProvider>
+		</AuthProvider>
 	);
 }
