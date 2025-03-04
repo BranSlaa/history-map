@@ -1,31 +1,54 @@
 {
-	"goal": "Develop an interactive history map application that integrates gamification elements, vector search capabilities, and user authentication.",
-	"needs": {
-		"frontend": "React with TypeScript, ensuring a seamless and engaging UI/UX.",
-		"backend": "FastAPI for handling API requests and managing data flow.",
-		"authentication": "Clerk integration with Next.js for secure user authentication.",
-		"data_storage": "User tables for quiz data, rankings, and engagement metrics.",
-		"vector_search": "Pinecone for efficient historical event search and contextual relationships."
+	"goal": "Develop an interactive history map application that integrates gamification elements, vector search capabilities, and user engagement through quizzes and rankings.",
+	"requirements": {
+		"frontend": {
+			"framework": "Next.js with React and TypeScript",
+			"styling": "Tailwind CSS for a responsive and engaging UI/UX"
+		},
+		"authentication": {
+			"provider": "Supabase",
+			"integration": "Seamless integration with Next.js for secure user authentication"
+		},
+		"data_storage": {
+			"provider": "Supabase",
+			"usage": "Store user data, event data, and engagement metrics"
+		},
+		"vector_search": {
+			"provider": "Supabase",
+			"purpose": "Enable efficient historical event search and contextual relationships"
+		}
 	},
 	"components": {
-		"map_interface": "Interactive historical map with dynamic overlays.",
-		"quiz_system": "Gamified quizzes linked to historical events and locations.",
-		"ranking_system": "User rankings based on engagement and accuracy.",
-		"user_profiles": "Personalized data tracking for progress and achievements.",
-		"search_functionality": "Vector-based search using Pinecone for contextual relevance."
+		"map_interface": "Interactive historical map with dynamic overlays for event visualization.",
+		"quiz_system": "Gamified quizzes tied to historical events and locations to enhance user engagement.",
+		"ranking_system": "User rankings based on quiz accuracy, engagement, and participation.",
+		"user_profiles": "Personalized profiles to track user progress, achievements, and historical interactions.",
+		"search_functionality": "Vector-based search using Supabase for contextual and relevant historical event discovery."
 	},
-	"collaboration_guidelines": {
-		"code_style": "Use 4-space width tab characters and TypeScript annotations.",
-		"version_control": "Follow Git best practices with feature branching and PR reviews.",
-		"documentation": "Maintain clear comments and README updates for all components.",
-		"testing": "Ensure unit and integration tests for critical functionalities."
+	"development_guidelines": {
+		"code_style": {
+			"indentation": "Use 4-space width tab characters.",
+			"language": "TypeScript with strict type annotations."
+		},
+		"version_control": {
+			"branching": "Follow Git best practices with feature branching.",
+			"reviews": "Mandatory pull request reviews before merging."
+		},
+		"documentation": {
+			"code_comments": "Only include comments to explain 'why' something is done, not 'what' is being done.",
+			"readme": "Use the README to explain the overall purpose and structure of the project, not implementation details."
+		},
+		"testing": {
+			"unit_tests": "Write unit tests for critical logic and components.",
+			"integration_tests": "Ensure integration tests for key workflows and interactions."
+		}
 	},
-	"aiRules": [
+	"ai_rules": [
 		{
 			"name": "no-explanatory-comments",
-			"description": "Do not add explanatory comments describing the intent behind code changes",
+			"description": "Prohibit the addition of explanatory comments that describe the intent behind code changes.",
 			"pattern": "/* All custom CSS|// Explanation:|// This change|// Added to|// Modified to|// Updated to|// Removed|// Changed|// Note:|// For clarity|// We're|// I'm|// This is",
-			"message": "Do not add explanatory comments to code. Keep code clean and focused on implementation only."
+			"message": "Avoid explanatory comments in code. Keep the codebase clean and focused solely on implementation."
 		}
 	]
 }
