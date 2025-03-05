@@ -32,7 +32,8 @@ export const Header: React.FC = () => {
 
 	const handleSignOut = async () => {
 		await signOut();
-		router.push('/');
+		// Force a hard page refresh to clear everything
+		window.location.href = '/';
 	};
 
 	return (

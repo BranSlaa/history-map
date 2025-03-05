@@ -51,7 +51,7 @@ const InformationPanel: React.FC<InformationPanelProps> = ({
 				<h3 className="font-medium text-stone-800 dark:text-amber-100 mb-1">
 					Description:
 				</h3>
-				<p className="text-stone-700 dark:text-amber-200 text-sm">
+				<p className="text-stone-700 dark:text-amber-200 text-[18px]">
 					{event.info}
 				</p>
 			</div>

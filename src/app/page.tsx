@@ -23,7 +23,7 @@ import {
 	addEventToList,
 	shouldShowWelcomeBack as shouldShowWelcomeBackUtil,
 } from '@/utils/eventUtils';
-import { fetchEventsCallback, fetchMoreEvents } from '@/utils/eventFetchUtils';
+import { fetchMoreEvents, fetchEvents } from '@/utils/eventFetchUtils';
 import {
 	recordEventInteraction,
 	updateNextEvent,
@@ -72,6 +72,9 @@ const App = () => {
 	// Near the top of the component, add both refs we need
 	const mountId = React.useRef(Math.random().toString(36).substring(2, 8));
 
+	// Add initialization loading state
+	const [isInitializing, setIsInitializing] = useState(true);
+
 	// Reference for map
 	const mapRef = useRef<any>(null);
 
@@ -105,7 +108,6 @@ const App = () => {
 		},
 		[],
 	);
-	const [pathOptions, setPathOptions] = useState<Event[]>([]);
 	const [showWelcomeBack, setShowWelcomeBack] = useState<boolean>(true);
 	const [lastEvent, setLastEvent] = useState<Event | null>(null);
 	const [yearRange, setYearRange] = useState<[number, number]>([
@@ -139,6 +141,19 @@ const App = () => {
 			}
 		},
 	});
+
+	// Extract unique subjects from events using useMemo for performance
+	const uniqueSubjects = useMemo(() => {
+		return Array.from(
+			new Set(
+				(events || [])
+					.filter(event => event && event.subject)
+					.map(event => event.subject),
+			),
+		)
+			.filter(Boolean)
+			.sort();
+	}, [events]);
 
 	const { isFirstMount } = useLogger(
 		mountId,
@@ -265,28 +280,28 @@ const App = () => {
 			onEventsFetched?: (newEvents: Event[]) => void,
 			isAdditionalEvent: boolean = false,
 		) => {
-			return fetchEventsCallback(
+			// Create a fetchEvents instance with the correct parameters
+			const fetchEventsInstance = fetchEvents(
+				setLoading,
+				setCurrentEvents,
+				currentEvents,
+			);
+
+			// Call the fetchEvents function with all parameters
+			return fetchEventsInstance(
 				topic,
 				title,
 				year,
 				onEventsFetched,
-				isAdditionalEvent,
-				supabase,
-				isEventAlreadyInLists,
-				setLoading,
-				setCurrentEvents,
-				interactedEventIds,
 				chosenEvents,
 				unchosenEvents,
 				selectedEvent,
 			);
 		},
 		[
-			supabase,
-			isEventAlreadyInLists,
 			setLoading,
 			setCurrentEvents,
-			interactedEventIds,
+			currentEvents,
 			chosenEvents,
 			unchosenEvents,
 			selectedEvent,
@@ -299,11 +314,14 @@ const App = () => {
 			currentEvents,
 			selectedEvent,
 			setUnchosenEvents,
+			setChosenEvents,
 			setCurrentEvents,
 			updatePathData,
 			recordEventInteractionWrapper,
 			fetchEventsCallbackWrapper,
 			topic,
+			chosenEvents,
+			unchosenEvents,
 		);
 	}, [
 		currentEvents,
@@ -314,6 +332,8 @@ const App = () => {
 		recordEventInteractionWrapper,
 		fetchEventsCallbackWrapper,
 		topic,
+		chosenEvents,
+		unchosenEvents,
 	]);
 
 	// Wrapper for handleContinueExploration
@@ -394,37 +414,6 @@ const App = () => {
 		}
 	}, [loading, searchInputRef]);
 
-	// Effect to mark interacted events after events are loaded
-	useEffect(() => {
-		if (events.length > 0 && interactedEventIds.size > 0) {
-			// Find IDs that haven't been marked yet
-			const unmarkedIds = new Set(
-				[...interactedEventIds].filter(
-					id => !markedInteractionsRef.current.has(id),
-				),
-			);
-
-			// If there are new IDs to mark
-			if (unmarkedIds.size > 0) {
-				const updatedEvents = markInteractedEvents(
-					events,
-					interactedEventIds,
-				);
-
-				// Update ref with all current interacted IDs
-				markedInteractionsRef.current = new Set(interactedEventIds);
-
-				// Update events
-				setEvents(updatedEvents);
-			}
-		}
-	}, [interactedEventIds, events.length, events, setEvents]);
-
-	// Effect to sync events and currentEvents
-	useEffect(() => {
-		syncEvents();
-	}, [currentEvents, syncEvents]);
-
 	// Fix the useEffect for initialization to avoid double calls
 	useEffect(() => {
 		if (user && isFirstMount.current) {
@@ -434,31 +423,86 @@ const App = () => {
 			);
 			isFirstMount.current = false;
 
-			// Fetch last event for welcome back
-			fetchLastEvent(user.id)
-				.then(event => {
+			// Fetch user data in one batch operation
+			Promise.all([
+				// Fetch last event
+				fetchLastEvent(user.id),
+				// Fetch path data
+				// fetchUserPathData(true),
+			])
+				.then(([event]) => {
 					if (event) {
 						console.log(
-							`[${mountId.current}] Last event initialization complete: Found:`,
-							event.title,
+							`[${mountId.current}] Initialization complete: Found last event: ${event.title}`,
 						);
 					} else {
 						console.log(
-							`[${mountId.current}] Last event initialization complete: No event found`,
+							`[${mountId.current}] Initialization complete: No last event found`,
 						);
 					}
+					// Mark initialization as complete
+					setIsInitializing(false);
 				})
 				.catch(err => {
 					console.error(
-						`[${mountId.current}] Error initializing last event:`,
+						`[${mountId.current}] Error during initialization:`,
 						err,
 					);
+					// Even on error, we should mark initialization as complete
+					setIsInitializing(false);
 				});
-
-			// Still fetch path data, but don't automatically set events
-			fetchUserPathData(false);
+		} else if (!user && !isInitializing) {
+			// If no user and not initializing, we're ready
+			setIsInitializing(false);
 		}
-	}, [user, fetchLastEvent, fetchUserPathData, mountId, isFirstMount]);
+	}, [
+		user,
+		fetchLastEvent,
+		fetchUserPathData,
+		mountId,
+		isFirstMount,
+		isInitializing,
+	]);
+
+	// Replace this effect with a more efficient version that only runs when dependencies actually change
+	useEffect(() => {
+		// Only run if we have events and there are interacted events
+		if (events.length === 0 || interactedEventIds.size === 0) return;
+
+		// Find IDs that haven't been marked yet
+		const unmarkedIds = new Set(
+			[...interactedEventIds].filter(
+				id => !markedInteractionsRef.current.has(id),
+			),
+		);
+
+		// Only update if there are actually new IDs to mark
+		if (unmarkedIds.size > 0) {
+			const updatedEvents = markInteractedEvents(
+				events,
+				interactedEventIds,
+			);
+
+			// Update ref with all current interacted IDs
+			markedInteractionsRef.current = new Set(interactedEventIds);
+
+			// Update events
+			setEvents(updatedEvents);
+		}
+	}, [interactedEventIds, events, setEvents]);
+
+	// Effect to sync events and currentEvents - only run when currentEvents actually changes
+	useEffect(() => {
+		// Skip if no current events or if the arrays are the same length (likely no change)
+		if (
+			currentEvents.length === 0 ||
+			(events.length === currentEvents.length && events.length > 0)
+		) {
+			return;
+		}
+
+		syncEvents();
+	}, [currentEvents, syncEvents, events.length]);
 
 	// Filter events for display based on subject
 	const filteredEvents = filterSubject
@@ -470,6 +514,25 @@ const App = () => {
 		event => event.year >= yearRange[0] && event.year <= yearRange[1],
 	);
 
+	// Don't render the main content until initialization is complete
+	if (isInitializing) {
+		return (
+			<div className="grid grid-cols-12 grid-rows-[auto_1fr_1fr] h-screen bg-amber-50 dark:bg-gray-900">
+				<div className="col-span-12">
+					<Header />
+				</div>
+				<div className="col-span-12 row-span-2 flex items-center justify-center">
+					<div className="text-center p-8">
+						<div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-amber-600 border-r-transparent dark:border-amber-400"></div>
+						<p className="mt-4 text-lg text-amber-800 dark:text-amber-200">
+							Loading your history journey...
+						</p>
+					</div>
+				</div>
+			</div>
+		);
+	}
+
 	return (
 		<div className="grid grid-cols-12 grid-rows-[auto_1fr_1fr] h-screen">
 			{/* Header row - spans all columns */}
@@ -479,7 +542,7 @@ const App = () => {
 
 			{/* Sidebar - Event Panel */}
 			<div
-				className={`col-span-12  md:row-span-2 ${isPanelCollapsed ? 'md:col-span-1' : 'md:col-span-3'}  bg-white dark:bg-gray-800 shadow-lg relative`}
+				className={`col-span-12  md:row-span-2 ${isPanelCollapsed ? 'md:col-span-1' : 'md:col-span-3'}  bg-white dark:bg-gray-800 shadow-lg relative z-10`}
 			>
 				<div className="h-full flex">
 					<div className="p-2 flex-grow overflow-y-auto">
@@ -488,7 +551,7 @@ const App = () => {
 								events={currentEvents}
 								selectedEvent={selectedEvent}
 								onSelectEvent={handleEventSelection}
-								pathOptions={pathOptions}
+								chosenEvents={chosenEvents}
 							/>
 							<InformationPanel
 								event={selectedEvent}
@@ -498,7 +561,7 @@ const App = () => {
 					</div>
 					<button
 						onClick={togglePanel}
-						className="bg-blue-600 hover:bg-blue-700 text-white w-12 flex items-center justify-center absolute right-0 top-1/2 transform -translate-y-1/2"
+						className="bg-amber-600 hover:bg-amber-700 text-white flex items-center justify-center absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-1/2 p-2"
 					>
 						{isPanelCollapsed ? '→' : '←'}
 					</button>
@@ -520,6 +583,15 @@ const App = () => {
 						/>
 					</div>
 				)}
+
+				<button
+					className="absolute top-4 right-4 z-20 w-fit max-w-2xl bg-amber-600 text-white font-bold text-lg px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors"
+					onClick={() => {
+						setShowWelcomeBack(true);
+					}}
+				>
+					Show Welcome Back
+				</button>
 
 				{/* Year filter slider - overlay on bottom of map */}
 				<div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-2xl">
@@ -548,7 +620,7 @@ const App = () => {
 				{/* Subject filter bar - overlay on left side of map */}
 				<div className="absolute bottom-4 left-4 z-20 w-fit">
 					<SubjectFilterBar
-						events={events}
+						subjects={uniqueSubjects}
 						onFilterChange={handleFilterChange}
 					/>
 				</div>

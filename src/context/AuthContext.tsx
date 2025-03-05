@@ -12,16 +12,17 @@ import {
 	User as SupabaseUser,
 	AuthError,
 } from '@supabase/supabase-js';
-import { User, SubscriptionTier } from '@/types/user';
+import { User, Profile, SubscriptionTier } from '@/types/user';
 import supabase from '@/lib/supabaseClient';
 
 interface AuthContextType {
 	authUser: SupabaseUser | null;
 	user: User | null;
+	profile: Profile | null;
 	loading: boolean;
 	error: string | null;
 	signOut: () => Promise<{ error: AuthError | null }>;
-	updateTier: (tier: SubscriptionTier) => Promise<void>;
+	updateProfile: (profile: Partial<Profile>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -35,54 +36,97 @@ export function AuthProvider({
 }: AuthProviderProps): React.ReactElement {
 	const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
 	const [user, setUser] = useState<User | null>(null);
-	const [loading, setLoading] = useState<boolean>(true);
+	const [profile, setProfile] = useState<Profile | null>(null);
+	const [isLoading, setIsLoading] = useState<boolean>(true);
 	const [error, setError] = useState<string | null>(null);
 
-	const syncUser = async (sessionUser: SupabaseUser | null) => {
-		console.log('syncUser called with sessionUser:', sessionUser?.id);
+	const syncUser = async (sessionUser: any) => {
+		setIsLoading(true);
 		setError(null);
 
 		try {
 			if (!sessionUser) {
 				setUser(null);
+				setProfile(null);
 				return;
 			}
 
-			// Fetch user data from the database
-			const { data: userData, error: userError } = await supabase
-				.from('users')
+			// Try fetching the profile directly
+			const { data: profileData, error: profileError } = await supabase
+				.from('profiles')
 				.select('*')
 				.eq('id', sessionUser.id)
 				.single();
 
-			if (userError) {
-				if (userError.code === 'PGRST116') {
-					// User not found in the database, create a new record
-					const { data: newUser, error: createError } = await supabase
-						.from('users')
+			if (profileError) {
+				console.error('Error fetching profile:', profileError);
+
+				// Profile doesn't exist - this could be a new user
+				// Create a new profile for the user
+				const { data: newProfileData, error: createProfileError } =
+					await supabase
+						.from('profiles')
 						.insert([
 							{
 								id: sessionUser.id,
-								email: sessionUser.email,
 								username:
 									sessionUser.email?.split('@')[0] ||
-									sessionUser.id,
+									`user_${sessionUser.id}`,
+								full_name:
+									sessionUser.user_metadata?.full_name || '',
+								avatar_url:
+									sessionUser.user_metadata?.avatar_url || '',
 								subscription_tier: SubscriptionTier.STUDENT,
 							},
 						])
 						.select('*')
 						.single();
 
-					if (createError) {
-						throw createError;
-					}
-
-					setUser(newUser as User);
-				} else {
-					throw userError;
+				if (createProfileError) {
+					console.error(
+						'Error creating profile:',
+						createProfileError,
+					);
+					setUser(null);
+					setProfile(null);
+					throw new Error('Failed to create profile');
 				}
+
+				// Set the new profile
+				setProfile(newProfileData as Profile);
+
+				// Create a user object from the profile data
+				const constructedUser: User = {
+					id: sessionUser.id,
+					profile_id: newProfileData.id,
+					email: sessionUser.email,
+					full_name:
+						sessionUser.user_metadata?.full_name ||
+						newProfileData.full_name,
+					avatar_url:
+						sessionUser.user_metadata?.avatar_url ||
+						newProfileData.avatar_url,
+					profile: newProfileData as Profile,
+				};
+				setUser(constructedUser);
 			} else {
-				setUser(userData as User);
+				// Successfully retrieved profile
+				setProfile(profileData as Profile);
+
+				// Construct user from auth user and profile data
+				const constructedUser: User = {
+					id: sessionUser.id,
+					profile_id: profileData.id,
+					email: sessionUser.email,
+					full_name:
+						sessionUser.user_metadata?.full_name ||
+						profileData.full_name,
+					avatar_url:
+						sessionUser.user_metadata?.avatar_url ||
+						profileData.avatar_url,
+					profile: profileData as Profile,
+				};
+				setUser(constructedUser);
 			}
 		} catch (err) {
 			console.error('Error syncing user:', err);
@@ -92,6 +136,9 @@ export function AuthProvider({
 				}`,
 			);
 			setUser(null);
+			setProfile(null);
+		} finally {
+			setIsLoading(false);
 		}
 	};
 
@@ -101,57 +148,47 @@ export function AuthProvider({
 		const setupAuth = async () => {
 			try {
 				console.log('Setting up auth...');
-				setLoading(true);
+				setIsLoading(true);
 
 				// Get initial session
 				const {
 					data: { session },
-					error: sessionError,
 				} = await supabase.auth.getSession();
-				if (sessionError) throw sessionError;
 
 				console.log('Initial session:', session?.user?.id);
 
-				if (!mounted) return;
-
-				// Set up auth state change listener first
-				const {
-					data: { subscription },
-				} = supabase.auth.onAuthStateChange(async (event, session) => {
-					console.log('Auth state change:', event, session?.user?.id);
-					if (!mounted) return;
-
-					if (session?.user) {
-						setAuthUser(session.user);
-						await syncUser(session.user);
-					} else {
-						setAuthUser(null);
-						setUser(null);
-					}
-				});
-
-				// Then handle initial session
 				if (session?.user) {
 					setAuthUser(session.user);
 					await syncUser(session.user);
 				} else {
 					setAuthUser(null);
 					setUser(null);
+					setProfile(null);
 				}
+
+				// Set up auth state change listener
+				const {
+					data: { subscription },
+				} = supabase.auth.onAuthStateChange(async (event, session) => {
+					console.log('Auth state change:', event, session?.user?.id);
+					setAuthUser(session?.user || null);
+
+					if (session?.user) {
+						await syncUser(session.user);
+					} else {
+						setUser(null);
+						setProfile(null);
+					}
+				});
 
 				return () => {
 					subscription.unsubscribe();
 				};
 			} catch (error) {
-				console.error('Auth setup error:', error);
-				if (mounted) {
-					setError('Failed to initialize authentication');
-					setAuthUser(null);
-					setUser(null);
-				}
+				console.error('Error setting up auth:', error);
 			} finally {
 				if (mounted) {
-					setLoading(false);
+					setIsLoading(false);
 				}
 			}
 		};
@@ -163,45 +200,69 @@ export function AuthProvider({
 		};
 	}, []);
 
-	const updateTier = async (tier: SubscriptionTier) => {
-		setLoading(true);
+	const updateProfile = async (profileData: Partial<Profile>) => {
+		setIsLoading(true);
 		setError(null);
 
 		try {
-			if (!user || !authUser) throw new Error('No user logged in');
+			if (!profile || !authUser) throw new Error('No user logged in');
 
 			const { data, error } = await supabase
-				.from('users')
-				.update({ subscription_tier: tier })
-				.eq('id', user.id)
+				.from('profiles')
+				.update(profileData)
+				.eq('id', profile.id)
 				.select('*')
 				.single();
 
 			if (error) throw error;
-			setUser(data as User);
+			setProfile(data as Profile);
+
+			// Update the user object with the new profile data
+			if (user) {
+				const updatedUser: User = {
+					...user,
+					full_name: data.full_name || user.full_name,
+					avatar_url: data.avatar_url || user.avatar_url,
+					profile: data as Profile,
+				};
+				setUser(updatedUser);
+			}
 		} catch (err) {
-			console.error('Error updating tier:', err);
+			console.error('Error updating profile:', err);
 			setError(
-				`Error updating subscription tier: ${
+				`Error updating profile: ${
 					err instanceof Error ? err.message : JSON.stringify(err)
 				}`,
 			);
 		} finally {
-			setLoading(false);
+			setIsLoading(false);
 		}
 	};
 
-	const value: AuthContextType = {
-		authUser,
-		user,
-		loading,
-		error,
-		signOut: () => supabase.auth.signOut(),
-		updateTier,
+	const signOut = async () => {
+		// Clear all state
+		setAuthUser(null);
+		setUser(null);
+		setProfile(null);
+
+		// Call Supabase signOut with global scope to ensure complete logout
+		return await supabase.auth.signOut({ scope: 'global' });
 	};
 
 	return (
-		<AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+		<AuthContext.Provider
+			value={{
+				authUser,
+				user,
+				profile,
+				loading: isLoading,
+				error,
+				signOut,
+				updateProfile,
+			}}
+		>
+			{children}
+		</AuthContext.Provider>
 	);
 }
 

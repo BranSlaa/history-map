@@ -1,37 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Event } from '@/types/event';
 
 const SubjectFilterBar: React.FC<{
-	events: Event[];
+	subjects: string[];
 	onFilterChange: (selectedSubject: string | null) => void;
-}> = ({ events, onFilterChange }) => {
+}> = ({ subjects, onFilterChange }) => {
 	const [showDropdown, setShowDropdown] = useState(true); // Always show on mobile initially
 	const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
 
-	// Debug
+	// Debug - only log in development, not in production
 	useEffect(() => {
-		console.log('SubjectFilterBar received events:', events?.length || 0);
 		console.log(
-			'Events with subjects:',
-			events?.filter(e => e?.subject)?.length || 0,
+			'SubjectFilterBar received subjects:',
+			subjects?.length || 0,
 		);
-	}, [events]);
-
-	// Extract unique subjects from events - handle null/undefined events gracefully
-	const uniqueSubjects = Array.from(
-		new Set(
-			(events || [])
-				.filter(event => event && event.subject)
-				.map(event => event.subject),
-		),
-	)
-		.filter(Boolean)
-		.sort();
-
-	// Debug
-	useEffect(() => {
-		console.log('Unique subjects found:', uniqueSubjects);
-	}, [uniqueSubjects]);
+	}, [subjects]);
 
 	const handleSelectChange = useCallback(
 		(e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -46,7 +28,7 @@ const SubjectFilterBar: React.FC<{
 	}, [selectedSubject, onFilterChange]);
 
 	// Don't render if there are no valid subjects
-	if (!events?.length || uniqueSubjects.length === 0) {
+	if (subjects.length === 0) {
 		return null;
 	}
 
@@ -70,7 +52,7 @@ const SubjectFilterBar: React.FC<{
 							className="w-full bg-amber-50 dark:bg-stone-800 border border-amber-700 dark:border-amber-600 text-stone-800 dark:text-amber-100 rounded p-2"
 						>
 							<option value="all">All Subjects</option>
-							{uniqueSubjects.map(subject => (
+							{subjects.map(subject => (
 								<option key={subject} value={subject}>
 									{subject}
 								</option>

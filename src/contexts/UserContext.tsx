@@ -7,7 +7,7 @@ import {
 	useState,
 	ReactNode,
 } from 'react';
-import { User, SubscriptionTier, UserMetadata } from '@/types/user';
+import { User, Profile, SubscriptionTier, UserMetadata } from '@/types/user';
 import supabase from '@/lib/supabaseClient';
 
 interface UserContextType {
@@ -47,40 +47,76 @@ export function UserProvider({ children }: { children: ReactNode }) {
 				return;
 			}
 
-			const { data: userData, error: userError } = await supabase
-				.from('users')
+			// Try fetching the profile directly
+			const { data: profileData, error: profileError } = await supabase
+				.from('profiles')
 				.select('*')
 				.eq('id', session.user.id)
 				.single();
 
-			if (userError) {
-				if (userError.code === 'PGRST116') {
-					// User not found in the database, create a new record
-					const { data: newUser, error: createError } = await supabase
-						.from('users')
-						.insert([
-							{
-								id: session.user.id,
-								email: session.user.email,
-								username:
-									session.user.email?.split('@')[0] ||
-									session.user.id,
-								subscription_tier: SubscriptionTier.STUDENT,
-							},
-						])
-						.select('*')
-						.single();
+			if (profileError) {
+				if (profileError.code === 'PGRST116') {
+					// Profile not found, create a new one
+					console.log(
+						'Creating new profile for user',
+						session.user.id,
+					);
+					const { data: newProfile, error: createError } =
+						await supabase
+							.from('profiles')
+							.insert([
+								{
+									id: session.user.id,
+									username:
+										session.user.email?.split('@')[0] ||
+										`user_${session.user.id}`,
+									full_name:
+										session.user.user_metadata?.full_name ||
+										'',
+									avatar_url:
+										session.user.user_metadata
+											?.avatar_url || '',
+									subscription_tier: SubscriptionTier.STUDENT,
+								},
+							])
+							.select('*')
+							.single();
 
 					if (createError) {
 						throw createError;
 					}
 
-					setUser(newUser as User);
+					// Construct a user object with the profile data
+					const constructedUser: User = {
+						id: session.user.id,
+						email: session.user.email,
+						profile_id: session.user.id,
+						full_name: session.user.user_metadata?.full_name || '',
+						avatar_url:
+							session.user.user_metadata?.avatar_url || '',
+						profile: newProfile as Profile,
+					};
+
+					setUser(constructedUser);
 				} else {
-					throw userError;
+					throw profileError;
 				}
 			} else {
-				setUser(userData as User);
+				// We have the profile, construct the user object
+				const constructedUser: User = {
+					id: session.user.id,
+					email: session.user.email,
+					profile_id: profileData.id,
+					full_name:
+						session.user.user_metadata?.full_name ||
+						profileData.full_name,
+					avatar_url:
+						session.user.user_metadata?.avatar_url ||
+						profileData.avatar_url,
+					profile: profileData as Profile,
+				};
+
+				setUser(constructedUser);
 			}
 		} catch (err) {
 			console.error('Error syncing user:', err);
@@ -139,15 +175,23 @@ export function UserProvider({ children }: { children: ReactNode }) {
 		try {
 			if (!user) throw new Error('No user logged in');
 
+			// Update the profile's subscription tier instead of the user's
 			const { data, error } = await supabase
-				.from('users')
+				.from('profiles')
 				.update({ subscription_tier: tier })
 				.eq('id', user.id)
 				.select('*')
 				.single();
 
 			if (error) throw error;
-			setUser(data as User);
+
+			// Create an updated user object with the new profile data
+			const updatedUser: User = {
+				...user,
+				profile: data as Profile,
+			};
+
+			setUser(updatedUser);
 		} catch (err) {
 			console.error('Error updating tier:', err);
 			setError(

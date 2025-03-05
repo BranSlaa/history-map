@@ -4,14 +4,75 @@ import { Event } from '@/types/event';
 const EventPanel: React.FC<{
 	events: Event[];
 	onSelectEvent: (event: Event) => void;
-	pathOptions?: Event[]; // Array of events representing path options
 	selectedEvent?: Event | null; // Add selectedEvent prop
-}> = ({ events, onSelectEvent, pathOptions = [], selectedEvent }) => {
-	// We can use the passed selectedEvent instead of maintaining our own state
-	// Keeping this for backward compatibility but will prefer the prop
+	chosenEvents?: Event[];
+}> = ({ events, onSelectEvent, selectedEvent, chosenEvents = [] }) => {
 	const [localSelectedEvent, setLocalSelectedEvent] = useState<Event | null>(
 		null,
 	);
+	const [relatedOptions, setRelatedOptions] = useState<Event[]>([]);
+
+	// Use the prop if available, otherwise fall back to local state
+	const effectiveSelectedEvent = selectedEvent || localSelectedEvent;
+
+	// This effect generates related event options based on the current events and selectedEvent
+	useEffect(() => {
+		const findRelatedEvents = (): Event[] => {
+			if (!effectiveSelectedEvent || events.length <= 1) {
+				return [];
+			}
+
+			// Find events from the same subject or time period
+			const selectedSubject = effectiveSelectedEvent.subject;
+			const selectedYear = effectiveSelectedEvent.year;
+
+			// Filter for events that are not the selected event
+			const otherEvents = events.filter(
+				e => e.id !== effectiveSelectedEvent.id,
+			);
+
+			// First, try to find events with the same subject
+			let options = otherEvents.filter(
+				e => e.subject === selectedSubject,
+			);
+
+			// If we don't have enough, add events from similar time periods
+			if (options.length < 2) {
+				const timeRelatedEvents = otherEvents
+					.filter(e => e.subject !== selectedSubject) // Exclude events we already have
+					.sort((a, b) => {
+						return (
+							Math.abs(a.year - selectedYear) -
+							Math.abs(b.year - selectedYear)
+						);
+					})
+					.slice(0, 2 - options.length);
+
+				options = [...options, ...timeRelatedEvents];
+			}
+
+			// If we still don't have 2 options, just use the first 2 other events
+			if (options.length < 2 && otherEvents.length > 0) {
+				const remainingNeeded = 2 - options.length;
+				const additionalEvents = otherEvents
+					.filter(e => !options.includes(e))
+					.slice(0, remainingNeeded);
+				options = [...options, ...additionalEvents];
+			}
+
+			return options.slice(0, 2);
+		};
+
+		// Find related events when the selected event changes
+		if (effectiveSelectedEvent) {
+			// Clear related options first
+			setRelatedOptions([]);
+
+			// Then find new related events
+			const related = findRelatedEvents();
+			setRelatedOptions(related);
+		}
+	}, [effectiveSelectedEvent, events]);
 
 	// Reset selected event when events change significantly
 	useEffect(() => {
@@ -19,14 +80,6 @@ const EventPanel: React.FC<{
 			setLocalSelectedEvent(null);
 		}
 	}, [events]);
-
-	// Use the prop if available, otherwise fall back to local state
-	const effectiveSelectedEvent = selectedEvent || localSelectedEvent;
-
-	// Group events by type: path options vs. regular events
-	const regularEvents = events.filter(
-		event => !pathOptions.some(option => option.id === event.id),
-	);
 
 	return (
 		<div className="bg-amber-50 dark:bg-stone-900 border-2 border-amber-700 dark:border-amber-800 rounded-lg shadow-md mb-4 h-auto overflow-hidden flex flex-col">
@@ -47,45 +100,103 @@ const EventPanel: React.FC<{
 				</div>
 			) : (
 				<div className="flex flex-col h-full">
-					{/* Path Options Section - Highlighted with a distinct style */}
-					{pathOptions.length > 0 && (
-						<div className="border-b-2 border-amber-600 dark:border-amber-700 p-2 bg-amber-100 dark:bg-stone-950">
-							<h3 className="text-sm font-bold text-amber-800 dark:text-amber-300 mb-2 px-2 flex items-center">
-								<span className="mr-2">🔍</span>
-								Choose Your Next Step:
-							</h3>
-							<div className="grid grid-cols-1 gap-2 px-2 pb-1">
-								{pathOptions.map(event => (
-									<button
-										key={`option-${event.id}`}
-										id={`event-${event.id}`}
+					<div className="flex-grow overflow-y-auto max-h-[calc(60vh-10rem)]">
+						{/* Chosen Events Section */}
+						{chosenEvents.length > 0 && (
+							<>
+								<h3 className="text-sm font-bold text-stone-700 dark:text-amber-400 px-4 pt-2 flex items-center">
+									<span className="mr-2">📚</span>
+									Chosen Events:
+								</h3>
+								<ul className="list-none p-3">
+									{chosenEvents.map((event, index) => (
+										<li
+											key={`${event.id}-chosen-${index}`}
+											onClick={() => {
+												setLocalSelectedEvent(event);
+												onSelectEvent(event);
+											}}
+											className={`cursor-pointer p-2 mb-2 bg-green-50 dark:bg-green-900/30 border-b border-amber-700 border-opacity-30 hover:bg-amber-100 dark:hover:bg-amber-900 transition-colors rounded ${
+												effectiveSelectedEvent?.id ===
+												event.id
+													? 'bg-amber-100 dark:bg-amber-900 font-semibold'
+													: ''
+											}`}
+											role="button"
+											tabIndex={0}
+										>
+											<div className="flex justify-between items-center">
+												<span className="text-stone-800 dark:text-amber-100">
+													{event.title}
+												</span>
+												<span className="text-xs text-stone-600 dark:text-amber-300">
+													{event.year}
+												</span>
+											</div>
+											<div className="text-xs mt-1 text-stone-600 dark:text-amber-300 opacity-70">
+												{event.subject
+													.split('-')
+													.map(
+														word =>
+															word
+																.charAt(0)
+																.toUpperCase() +
+															word.slice(1),
+													)
+													.join(' ')}
+											</div>
+										</li>
+									))}
+								</ul>
+								<div className="border-t border-amber-700/30 my-2"></div>
+							</>
+						)}
+
+						{/* Search Results/Available Events Section */}
+						<h3 className="text-sm font-bold text-stone-700 dark:text-amber-400 px-4 pt-2 flex items-center">
+							<span className="mr-2">🔍</span>
+							Available Events:
+						</h3>
+						<ul className="list-none p-3">
+							{/* Filter out events that are already in chosen events list */}
+							{events
+								.filter(
+									event =>
+										!chosenEvents.some(
+											chosen => chosen.id === event.id,
+										),
+								)
+								.map((event, index) => (
+									<li
+										key={`${event.id}-option-${index}`}
 										onClick={() => {
 											setLocalSelectedEvent(event);
 											onSelectEvent(event);
 										}}
-										className={`flex flex-col p-3 border-2 rounded-lg hover:bg-amber-200 dark:hover:bg-amber-900 transition-colors cursor-pointer shadow-md ${
+										className={`cursor-pointer p-2 mb-2 border-b border-amber-700 border-opacity-30 hover:bg-amber-100 dark:hover:bg-amber-900 dark:hover:bg-opacity-30 transition-colors ${
 											effectiveSelectedEvent?.id ===
 											event.id
-												? 'bg-amber-200 dark:bg-amber-800 border-amber-600 dark:border-amber-700'
-												: event.interacted
-													? 'bg-emerald-50/90 dark:bg-emerald-950/90 border-emerald-600 dark:border-emerald-700'
-													: 'bg-amber-50/80 dark:bg-stone-900/80 border-amber-600 dark:border-amber-700'
+												? 'bg-amber-100 dark:bg-amber-900 font-semibold'
+												: ''
 										}`}
+										role="button"
+										tabIndex={0}
 									>
 										<div className="flex justify-between items-center">
-											<span className="font-semibold text-stone-800 dark:text-amber-100">
+											<span className="text-stone-800 dark:text-amber-100">
 												{event.title}
-												{event.interacted && (
-													<span className="ml-2 text-xs text-emerald-600 dark:text-emerald-400">
-														(Explored)
+												{effectiveSelectedEvent?.id ===
+													event.id && (
+													<span className="ml-2 text-xs text-amber-600 dark:text-amber-400">
+														(Selected)
 													</span>
 												)}
 											</span>
-											<span className="text-xs bg-amber-600 dark:bg-amber-700 text-white px-2 py-1 rounded-full">
+											<span className="text-xs text-stone-600 dark:text-amber-300">
 												{event.year}
 											</span>
 										</div>
-										<div className="text-xs mt-1 text-stone-600 dark:text-amber-300">
+										<div className="text-xs mt-1 text-stone-600 dark:text-amber-300 opacity-70">
 											{event.subject
 												.split('-')
 												.map(
@@ -97,64 +208,8 @@ const EventPanel: React.FC<{
 												)
 												.join(' ')}
 										</div>
-									</button>
+									</li>
 								))}
-							</div>
-						</div>
-					)}
-
-					{/* Current Path Section - Shows events in chronological order */}
-					<div className="flex-grow overflow-y-auto max-h-[calc(60vh-10rem)]">
-						<h3 className="text-sm font-bold text-stone-700 dark:text-amber-400 px-4 pt-2 flex items-center">
-							<span className="mr-2">📜</span>
-							Your Path:
-						</h3>
-						<ul className="list-none p-3">
-							{regularEvents.map((event, index) => (
-								<li
-									key={`${event.id}-sidebar-${index}`}
-									id={`event-${event.id}`}
-									onClick={() => {
-										setLocalSelectedEvent(event);
-										onSelectEvent(event);
-									}}
-									className={`cursor-pointer p-2 mb-2 border-b border-amber-700 border-opacity-30 hover:bg-amber-100 dark:hover:bg-amber-900 dark:hover:bg-opacity-30 transition-colors ${
-										effectiveSelectedEvent?.id === event.id
-											? 'bg-amber-100 dark:bg-amber-900 dark:bg-opacity-40 font-semibold'
-											: event.interacted
-												? 'bg-emerald-50/60 dark:bg-emerald-950/60'
-												: ''
-									}`}
-									role="button"
-									tabIndex={0}
-								>
-									<div className="flex justify-between items-center">
-										<span className="text-stone-800 dark:text-amber-100">
-											{event.title}
-											{event.interacted && (
-												<span className="ml-2 text-xs text-emerald-600 dark:text-emerald-400">
-													(Explored)
-												</span>
-											)}
-										</span>
-										<span className="text-xs text-stone-600 dark:text-amber-300">
-											{event.year}
-										</span>
-									</div>
-									<div className="text-xs mt-1 text-stone-600 dark:text-amber-300 opacity-70">
-										{event.subject
-											.split('-')
-											.map(
-												word =>
-													word
-														.charAt(0)
-														.toUpperCase() +
-													word.slice(1),
-											)
-											.join(' ')}
-									</div>
-								</li>
-							))}
 						</ul>
 					</div>
 				</div>

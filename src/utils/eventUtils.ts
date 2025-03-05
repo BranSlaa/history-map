@@ -1,246 +1,5 @@
-import { useCallback } from "react";
-import supabase from '@/lib/supabaseClient';
 import { Event } from '@/types/event';
 import { SupabaseClient } from '@supabase/supabase-js';
-import { fetchFromOpenAI } from './aiUtils';
-
-// Constants
-const maxEvents = 2;
-const unchosenEventIds = new Set<string>();
-
-export const fetchEvents = (
-	setLoading: React.Dispatch<React.SetStateAction<boolean>>,
-	setEvents: React.Dispatch<React.SetStateAction<Event[]>>,
-	events: Event[],
-) =>
-	useCallback(
-		async (
-			topic: string,
-			title: string,
-			year?: number,
-			onEventsFetched?: (newEvents: Event[]) => void,
-		) => {
-			setLoading(true);
-
-			try {
-				console.log('Search Parameters:');
-				console.log('- topic:', topic);
-				console.log('- title:', title);
-				console.log('- year:', year);
-
-				if (title && events.length > 0) {
-					const selectedEvent = events.find(e => e.title === title);
-					if (selectedEvent) {
-						// Only add events from the current set of options (max 2) to unchosen
-						const currentOptions = events.slice(-maxEvents);
-						currentOptions.forEach(event => {
-							if (event.id !== selectedEvent.id) {
-								unchosenEventIds.add(event.id);
-							}
-						});
-					}
-				}
-
-				const {
-					data: { user },
-				} = await supabase.auth.getUser();
-				if (!user?.id) {
-					console.error('No user ID found');
-					return;
-				}
-
-				let query = supabase
-					.from('events')
-					.select('*')
-					.order('year', { ascending: true });
-
-				if (year !== undefined) {
-					query = query.gte('year', year);
-				}
-
-				if (title) {
-					query = query.ilike('title', `%${title}%`);
-				}
-
-				// Exclude both interacted and unchosen events
-				interface EventInteraction {
-					event_id: string;
-				}
-
-				const { data: interactedEvents = [] } = (await supabase
-					.from('user_event_interactions')
-					.select('event_id')
-					.eq('user_id', user.id)) as {
-					data: EventInteraction[] | null;
-				};
-
-				const safeInteractedEvents = interactedEvents || [];
-				const allExcludedIds = [
-					...safeInteractedEvents.map(ie => ie.event_id),
-					...Array.from(unchosenEventIds),
-				];
-
-				if (allExcludedIds.length > 0) {
-					query = query.not(
-						'id',
-						'in',
-						`(${allExcludedIds.map(id => `'${id}'`).join(',')})`,
-					);
-				}
-
-				if (topic) {
-					console.log('Topic search:', topic);
-					await supabase.rpc('track_search_term', {
-						p_term: topic,
-						p_had_results: false,
-					});
-
-					if (!topic.includes(' ')) {
-						query = query.or(
-							`title.ilike.%${topic}%,info.ilike.%${topic}%`,
-						);
-					} else {
-						try {
-							const response = await fetch(
-								'/api/generate-embedding',
-								{
-									method: 'POST',
-									headers: {
-										'Content-Type': 'application/json',
-									},
-									body: JSON.stringify({ text: topic }),
-								},
-							);
-
-							if (!response.ok) {
-								throw new Error(
-									`API responded with status: ${response.status}`,
-								);
-							}
-
-							const embedding = await response.json();
-							const {
-								data: semanticResults,
-								error: searchError,
-							} = await supabase.rpc('match_events', {
-								query_embedding: embedding,
-								match_threshold: 0.9,
-								match_count: maxEvents,
-							});
-
-							if (semanticResults && !searchError) {
-								await supabase.rpc('track_search_term', {
-									p_term: topic,
-									p_had_results: semanticResults.length > 0,
-								});
-
-								const filteredResults = semanticResults.filter(
-									(event: Event) =>
-										!safeInteractedEvents.some(
-											ie => ie.event_id === event.id,
-										),
-								);
-
-								if (filteredResults.length > 0) {
-									if (title) {
-										const selectedEvent = events.find(
-											e => e.title === title,
-										);
-										setEvents(() =>
-											selectedEvent
-												? [
-														selectedEvent,
-														...filteredResults,
-													]
-												: filteredResults,
-										);
-									} else {
-										setEvents(() => filteredResults);
-									}
-									if (onEventsFetched)
-										onEventsFetched(filteredResults);
-									setLoading(false);
-									return;
-								}
-							}
-						} catch (error) {
-							console.error('Vector search failed:', error);
-							query = query.or(
-								`title.ilike.%${topic}%,info.ilike.%${topic}%`,
-							);
-						}
-					}
-				}
-
-				query = query.limit(maxEvents);
-				const { data: queryData, error } = await query;
-
-				if (error) {
-					console.error('Failed to fetch events:', error);
-					setLoading(false);
-					return;
-				}
-
-				const data = queryData || [];
-				console.log(
-					`Retrieved ${data.length} events from database query`,
-				);
-
-				if (topic) {
-					await supabase.rpc('track_search_term', {
-						p_term: topic,
-						p_had_results: data.length > 0,
-					});
-				}
-
-				if (data.length === 0) {
-					const additionalEvents = await fetchFromOpenAI(
-						topic,
-						title,
-						year || null,
-						maxEvents,
-					);
-					if (additionalEvents.length > 0) {
-						// If we're exploring from a selected event, keep it and add new events
-						if (title) {
-							const selectedEvent = events.find(
-								e => e.title === title,
-							);
-							setEvents(prevEvents =>
-								selectedEvent
-									? [selectedEvent, ...additionalEvents]
-									: additionalEvents,
-							);
-						} else {
-							setEvents(prevEvents => [
-								...prevEvents,
-								...additionalEvents,
-							]);
-						}
-						if (onEventsFetched) onEventsFetched(additionalEvents);
-					}
-				} else {
-					// If we're exploring from a selected event, keep it and add new events
-					if (title) {
-						const selectedEvent = events.find(
-							e => e.title === title,
-						);
-						setEvents(prevEvents =>
-							selectedEvent ? [selectedEvent, ...data] : data,
-						);
-					} else {
-						setEvents(prevEvents => [...prevEvents, ...data]);
-					}
-					if (onEventsFetched) onEventsFetched(data);
-				}
-			} catch (error) {
-				console.error('Failed to fetch events:', error);
-			} finally {
-				setLoading(false);
-			}
-		},
-		[],
-	);
 
 // Function to mark events as interacted based on interacted event IDs
 export const markInteractedEvents = (
@@ -292,27 +51,10 @@ export const createFetchLastEvent = (supabase: SupabaseClient) => {
 				return null;
 			}
 			
-			// Check for current_event_id in different levels of the data structure
-			let currentEventId = 
-				// First check root level
-				pathData[0].current_event_id || 
-				// Then check path_data object
-				(pathData[0].path_data && pathData[0].path_data.current_event_id);
+			// Check for currentEventId in different levels of the data structure
+			let currentEventId = pathData[0].currentEventId || pathData[0].path_data && pathData[0].path_data.currentEventId;
 			
 			console.log(`[${mountId.current}] Current event ID:`, currentEventId);
-			
-			// Check if we have chosen events
-			const chosenEvents = pathData[0].path_data && pathData[0].path_data.chosen_events
-				? pathData[0].path_data.chosen_events
-				: [];
-			
-			console.log(`[${mountId.current}] Chosen events:`, chosenEvents);
-			
-			// Fallback: If no current event ID but we have chosen events, use the last chosen event
-			if (!currentEventId && chosenEvents && chosenEvents.length > 0) {
-				currentEventId = chosenEvents[chosenEvents.length - 1];
-				console.log(`[${mountId.current}] Using last chosen event as fallback:`, currentEventId);
-			}
 			
 			if (!currentEventId) {
 				console.log(`[${mountId.current}] No current event ID found in path data`);
@@ -378,7 +120,10 @@ export const createUpdatePathData = (supabase: SupabaseClient) => {
 		selectedEvent: Event | null,
 		mountId: React.MutableRefObject<string>
 	) => {
-		if (!userId) return;
+		if (!userId) {
+			console.warn(`[${mountId.current}] Cannot update path data: userId is empty`);
+			return;
+		}
 
 		try {
 			// Convert events to IDs for storage
@@ -392,42 +137,80 @@ export const createUpdatePathData = (supabase: SupabaseClient) => {
 				currentEventId,
 			});
 
-			// Create path data object with both camelCase (client) and snake_case (database) properties
-			// to ensure compatibility
 			const pathData = {
 				chosenEvents: chosenEventIds,
-				chosen_events: chosenEventIds,
 				unchosenEvents: unchosenEventIds,
-				unchosen_events: unchosenEventIds,
-				currentEventId,
-				current_event_id: currentEventId,
+				currentEventId : currentEventId,
 			};
 
 			// Log the path data to be sent
 			console.log(`[${mountId.current}] Path data to be sent:`, JSON.stringify(pathData));
 
-			// Send directly to Supabase
-			const { data, error } = await supabase
+			// First check if a record exists for this user
+			const { data: existingData, error: checkError } = await supabase
 				.from('user_paths')
-				.upsert(
-					{
+				.select('id')
+				.eq('user_id', userId)
+				.limit(1);
+
+			if (checkError) {
+				console.error(`[${mountId.current}] Error checking for existing path data:`, checkError);
+				throw checkError;
+			}
+
+			let result;
+			if (existingData && existingData.length > 0) {
+				// Update existing record
+				console.log(`[${mountId.current}] Updating existing path record for user ${userId}`);
+				const { data, error } = await supabase
+					.from('user_paths')
+					.update({
+						path_data: pathData,
+						current_event_id: currentEventId,
+						updated_at: new Date().toISOString(),
+					})
+					.eq('user_id', userId)
+					.select();
+
+				if (error) {
+					console.error(`[${mountId.current}] Update error:`, error);
+					throw error;
+				}
+				result = data;
+			} else {
+				// Insert new record
+				console.log(`[${mountId.current}] Creating new path record for user ${userId}`);
+				const { data, error } = await supabase
+					.from('user_paths')
+					.insert({
 						user_id: userId,
 						path_data: pathData,
 						current_event_id: currentEventId,
 						updated_at: new Date().toISOString(),
-					},
-					{ onConflict: 'user_id' },
-				)
-				.select();
+					})
+					.select();
 
-			if (error) {
-				throw error;
+				if (error) {
+					console.error(`[${mountId.current}] Insert error:`, error);
+					throw error;
+				}
+				result = data;
 			}
 
-			console.log(`[${mountId.current}] Updated path data in database:`, data);
-			return data;
+			console.log(`[${mountId.current}] Updated path data in database:`, result);
+			return result;
 		} catch (error) {
-			console.error(`[${mountId.current}] Error updating path data:`, error);
+			// Enhanced error logging with type checking
+			if (error instanceof Error) {
+				console.error(`[${mountId.current}] Error updating path data:`, {
+					name: error.name,
+					message: error.message,
+					stack: error.stack
+				});
+			} else {
+				console.error(`[${mountId.current}] Unknown error updating path data:`, 
+					typeof error === 'object' ? JSON.stringify(error) : error);
+			}
 			return null;
 		}
 	};

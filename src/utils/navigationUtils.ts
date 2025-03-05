@@ -55,7 +55,7 @@ export const handleContinueExploration = (
 								`Found ${generalEvents.length} general events for subject ${lastEvent.subject}`,
 							);
 						},
-						true,
+						true, // This is an additional event fetch
 					);
 				}
 			},

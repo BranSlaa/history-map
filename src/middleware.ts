@@ -5,20 +5,10 @@ import type { NextRequest } from 'next/server';
 export async function middleware(req: NextRequest) {
 	const res = NextResponse.next();
 	const supabase = createMiddlewareClient({ req, res });
-
-	const {
-		data: { session },
-	} = await supabase.auth.getSession();
-
-	// Protected routes check - only redirect if no session
-	if (
-		!session &&
-		(req.nextUrl.pathname.startsWith('/dashboard') ||
-			req.nextUrl.pathname.startsWith('/profile'))
-	) {
-		return NextResponse.redirect(new URL('/login', req.url));
-	}
-
+	
+	// Refresh the session to keep it active, but don't redirect
+	await supabase.auth.getSession();
+	
 	return res;
 }
 

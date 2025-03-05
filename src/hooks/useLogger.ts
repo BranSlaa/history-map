@@ -1,6 +1,13 @@
 import { useEffect, useRef } from 'react';
 import { Event } from '@/types/event';
 
+// Helper to conditionally log only in development mode
+const devLog = (...args: any[]): void => {
+	if (process.env.NODE_ENV === 'development') {
+		console.log(...args);
+	}
+};
+
 export const useLogger = (
 	mountId: React.MutableRefObject<string>,
 	showWelcomeBack: boolean,
@@ -11,82 +18,76 @@ export const useLogger = (
 ) => {
 	const renderCountRef = useRef(0);
 	const isFirstMount = useRef(true);
-
-	// Component lifecycle logger
+	const prevEventsLengthRef = useRef(events.length);
+	
+	// Component lifecycle logger - only run in development
 	useEffect(() => {
-		console.log(
+		devLog(
 			`[${mountId.current}] App component mounted at ${new Date().toLocaleTimeString()}`,
 		);
 
 		return () => {
-			console.log(
+			devLog(
 				`[${mountId.current}] App component unmounted at ${new Date().toLocaleTimeString()}`,
 			);
 		};
 	}, [mountId]);
 
-	// Add a new useEffect to run once on component mount to log initial state
+	// Only log initial state once
 	useEffect(() => {
-		console.log(
-			`[${mountId.current}] Initial state - showWelcomeBack: ${showWelcomeBack}, hasLastEvent: ${!!lastEvent}`,
-		);
-	}, []); // Empty dependency array ensures it runs only once on mount
-
-	// Add a useEffect to log when the component renders
-	useEffect(() => {
-		console.log('App component mounted - initial state:');
-		console.log('showWelcomeBack:', showWelcomeBack);
-		console.log('lastEvent:', lastEvent?.title);
-	}, [lastEvent?.title, showWelcomeBack]);
-
-	// Add a dedicated useEffect for lastEvent changes
-	useEffect(() => {
-		// Debounce log output to reduce noise
-		const logTimeout = setTimeout(() => {
-			console.log(
-				`[${mountId.current}] lastEvent changed:`,
-				lastEvent?.title,
+		if (isFirstMount.current) {
+			devLog(
+				`[${mountId.current}] Initial state - showWelcomeBack: ${showWelcomeBack}, hasLastEvent: ${!!lastEvent}`,
 			);
-		}, 50);
+		}
+	}, []); 
 
-		return () => clearTimeout(logTimeout);
-	}, [lastEvent, mountId]);
-
-	// Fix the debounced render log effect
+	// Consolidated logging for important state changes
 	useEffect(() => {
+		// Only log if lastEvent title changed
+		if (lastEvent) {
+			devLog(`[${mountId.current}] lastEvent changed:`, lastEvent.title);
+		}
+	}, [lastEvent?.title, mountId]);
+
+	// Reduced and throttled render logging
+	useEffect(() => {
+		// Increment render count
 		renderCountRef.current += 1;
+		
+		// But only log on significant state changes
+		const shouldLog = 
+			renderCountRef.current <= 3 || // Always log the first few renders
+			prevEventsLengthRef.current !== events.length; // Log when events change
+			
+		if (shouldLog) {
+			devLog(`[${mountId.current}] Render #${renderCountRef.current}:`, {
+				showWelcomeBack,
+				hasLastEvent: !!lastEvent,
+				lastEventTitle: lastEvent?.title,
+				isLoading: loading,
+				eventsCount: currentEvents.length,
+			});
+		}
+		
+		// Update prev length ref
+		prevEventsLengthRef.current = events.length;
+	}, [showWelcomeBack, lastEvent, loading, currentEvents.length, mountId, events.length]);
 
-		const logTimeout = setTimeout(() => {
-			console.log(
-				`[${mountId.current}] Render #${renderCountRef.current}:`,
-				{
-					showWelcomeBack,
-					hasLastEvent: !!lastEvent,
-					lastEventTitle: lastEvent?.title,
-					isLoading: loading,
-					eventsCount: currentEvents.length,
-				},
-			);
-		}, 100);
-
-		return () => clearTimeout(logTimeout);
-	}, [showWelcomeBack, lastEvent, loading, currentEvents.length, mountId]);
-
-	// Add this useEffect to debug the events
+	// Simplified events logging
 	useEffect(() => {
-		console.log('Main events array updated, length:', events.length);
-		if (events.length > 0) {
-			console.log('Sample event:', events[0]);
-			console.log(
-				'Events with subjects:',
-				events.filter(e => e.subject).length,
-			);
-			console.log(
-				'Unique subjects:',
-				Array.from(
-					new Set(events.filter(e => e.subject).map(e => e.subject)),
-				),
-			);
+		// Only log if events length actually changed
+		if (events.length !== prevEventsLengthRef.current) {
+			devLog('Main events array updated, length:', events.length);
+			
+			// Only log detailed info if there are events and we're in development
+			if (events.length > 0 && process.env.NODE_ENV === 'development') {
+				// Count subjects without logging the details
+				const subjectsCount = events.filter(e => e.subject).length;
+				devLog('Events with subjects:', subjectsCount);
+			}
+			
+			prevEventsLengthRef.current = events.length;
 		}
 	}, [events]);
 
