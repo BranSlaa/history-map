@@ -7,11 +7,13 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter } from 'next/navigation';
 
 export const Header: React.FC = () => {
-	const [isDesktop, setIsDesktop] = useState(false);
+	const [isDesktop, setIsDesktop] = useState(true);
+	const [isMounted, setIsMounted] = useState(false);
 	const { authUser, signOut } = useAuth();
 	const router = useRouter();
 
 	useEffect(() => {
+		setIsMounted(true);
 		const checkScreenSize = () => {
 			setIsDesktop(window.innerWidth >= 768);
 		};
@@ -48,12 +50,20 @@ export const Header: React.FC = () => {
 				>
 					History Map
 				</Link>
-				<nav className={`${isDesktop ? 'flex' : 'hidden'} gap-8`}>
+				<nav
+					className={`${!isMounted || isDesktop ? 'flex' : 'hidden'} gap-8`}
+				>
 					<Link
 						href="/"
 						className="text-stone-800 dark:text-amber-100 hover:text-amber-700 dark:hover:text-amber-500 font-medium transition-colors"
 					>
 						Map
+					</Link>
+					<Link
+						href="/quizzes"
+						className="text-stone-800 dark:text-amber-100 hover:text-amber-700 dark:hover:text-amber-500 font-medium transition-colors"
+					>
+						Quizzes
 					</Link>
 					{authUser && (
 						<Link

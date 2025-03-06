@@ -6,6 +6,17 @@ export interface Quiz {
 	created_at: string;
 	updated_at?: string;
 	questions?: Question[];
+	// Add fields for our public quizzes display
+	subject?: string;
+	topic?: string;
+	question_count?: number;
+	user_id?: string;
+	creator?: {
+		id: string;
+		username?: string;
+		first_name?: string;
+		last_name?: string;
+	};
 }
 
 export interface Question {

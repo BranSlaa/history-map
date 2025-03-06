@@ -39,6 +39,7 @@ import supabase from '@/lib/supabaseClient';
 import WelcomeBack from './components/WelcomeBack';
 import { Header } from './components/Header';
 import { AdjustMapView } from '@/components/map/AdjustMapView';
+import FeaturedQuizzes from './components/FeaturedQuizzes';
 import {
 	createMapIcons,
 	addMapMarkerStyles,
@@ -695,6 +696,9 @@ const App = () => {
 					</ClientOnly>
 				</div>
 			</div>
+
+			{/* Add Featured Quizzes Section */}
+			<FeaturedQuizzes />
 		</div>
 	);
 };
