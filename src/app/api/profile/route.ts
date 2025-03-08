@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSupabaseAdmin, withErrorHandling } from '@/utils/api-helpers';
+import { generateUsername } from '@/utils/usernameGenerator';
 
 export const POST = withErrorHandling(async (request: NextRequest) => {
     // Get the profile data from the request
@@ -16,11 +17,25 @@ export const POST = withErrorHandling(async (request: NextRequest) => {
     // Get the admin client (this will throw if not available)
     const supabaseAdmin = getSupabaseAdmin();
     
+    // Ensure all required fields are present with defaults if needed
+    const profileToInsert = {
+        id: profileData.id,
+        username: profileData.username || generateUsername(),
+        avatar_url: profileData.avatar_url || null,
+        subscription_tier: profileData.tier === 'student' ? 1 : 
+						profileData.tier === 'scholar' ? 2 : 
+						profileData.tier === 'historian' ? 3 : 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        search_count: 0,
+        connection_count: 0
+    };
+    
     // Create a new profile for the user using the admin client
     // This bypasses RLS policies
     const { data, error } = await supabaseAdmin
         .from('profiles')
-        .insert([profileData])
+        .insert([profileToInsert])
         .select('*')
         .single();
         

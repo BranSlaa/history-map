@@ -47,11 +47,11 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- Create profiles table (linked to auth.users)
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    first_name TEXT,
-    last_name TEXT,
-    username TEXT,
+    username TEXT NOT NULL,
+    avatar_url TEXT,
     subscription_tier SMALLINT NOT NULL DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_sign_in_at TIMESTAMP WITH TIME ZONE,
     search_count INTEGER DEFAULT 0,
     connection_count INTEGER DEFAULT 0,
@@ -86,12 +86,27 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = ''
 AS $$
+DECLARE
+    random_username TEXT;
 BEGIN
-    INSERT INTO public.profiles (id, username, subscription_tier)
+    -- Generate a simple random username as a fallback
+    random_username := 'user_' || substr(md5(gen_random_uuid()::text), 1, 10);
+    
+    INSERT INTO public.profiles (
+        id, 
+        username, 
+        avatar_url, 
+        subscription_tier,
+        created_at,
+        updated_at
+    )
     VALUES (
         new.id, 
-        COALESCE(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)), 
-        COALESCE((new.raw_user_meta_data->>'subscription_tier')::smallint, 1)
+        COALESCE(new.raw_user_meta_data->>'username', random_username),
+        new.raw_user_meta_data->>'avatar_url',
+        COALESCE((new.raw_user_meta_data->>'subscription_tier')::smallint, 1),
+        NOW(),
+        NOW()
     );
     RETURN new;
 END;

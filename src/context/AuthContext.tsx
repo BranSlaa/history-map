@@ -7,13 +7,10 @@ import React, {
 	useState,
 	ReactNode,
 } from 'react';
-import {
-	Session,
-	User as SupabaseUser,
-	AuthError,
-} from '@supabase/supabase-js';
+import { User as SupabaseUser, AuthError } from '@supabase/supabase-js';
 import { User, Profile, SubscriptionTier } from '@/types/user';
 import supabase from '@/lib/supabaseClient';
+import { generateUsername } from '@/utils/usernameGenerator';
 
 interface AuthContextType {
 	authUser: SupabaseUser | null;
@@ -128,12 +125,9 @@ export function AuthProvider({
 				const constructedUser: User = {
 					id: sessionUser.id,
 					email: sessionUser.email,
-					profile_id: newProfileData.id,
-					full_name: sessionUser.user_metadata?.full_name || '',
-					avatar_url:
-						sessionUser.user_metadata?.avatar_url ||
-						newProfileData.avatar_url ||
-						'',
+					profile_id: sessionUser.id,
+					username: generateUsername(),
+					avatar_url: sessionUser.user_metadata?.avatar_url || '',
 					profile: enhancedProfile as Profile,
 				};
 
@@ -153,7 +147,6 @@ export function AuthProvider({
 					id: sessionUser.id,
 					email: sessionUser.email,
 					profile_id: profileData.id,
-					full_name: sessionUser.user_metadata?.full_name || '',
 					avatar_url:
 						sessionUser.user_metadata?.avatar_url ||
 						profileData.avatar_url ||
@@ -245,20 +238,6 @@ export function AuthProvider({
 			// Transform the profile data to match the database schema
 			const dbProfileData: any = { ...profileData };
 
-			// No need to handle full_name -> first_name/last_name conversion
-			// Remove full_name as it doesn't exist in DB
-			if (dbProfileData.full_name) {
-				delete dbProfileData.full_name;
-			}
-
-			// Handle subscription_tier -> tier conversion
-			if (profileData.subscription_tier !== undefined) {
-				dbProfileData.tier = getTierString(
-					profileData.subscription_tier,
-				);
-				delete dbProfileData.subscription_tier; // Remove subscription_tier as it doesn't exist in DB
-			}
-
 			// Update the record in the database
 			const { data, error } = await supabase
 				.from('profiles')
@@ -269,10 +248,10 @@ export function AuthProvider({
 
 			if (error) throw error;
 
-			// Convert database record back to application model format
+			// Update local state with the new profile data
 			const enhancedProfile = {
 				...data,
-				subscription_tier: mapTierToEnum(data.tier),
+				subscription_tier: data.subscription_tier,
 			};
 
 			setProfile(enhancedProfile as Profile);
@@ -297,20 +276,6 @@ export function AuthProvider({
 			setIsLoading(false);
 		}
 	};
-
-	// Helper function to convert enum to string
-	function getTierString(tier: SubscriptionTier): string {
-		switch (tier) {
-			case SubscriptionTier.STUDENT:
-				return 'student';
-			case SubscriptionTier.SCHOLAR:
-				return 'scholar';
-			case SubscriptionTier.HISTORIAN:
-				return 'historian';
-			default:
-				return 'student';
-		}
-	}
 
 	const signOut = async () => {
 		// Clear all state
@@ -349,12 +314,11 @@ export const useAuth = (): AuthContextType => {
 
 function mapTierToEnum(tier: string): SubscriptionTier {
 	switch (tier?.toLowerCase()) {
-		case 'student':
-			return SubscriptionTier.STUDENT;
 		case 'scholar':
 			return SubscriptionTier.SCHOLAR;
 		case 'historian':
 			return SubscriptionTier.HISTORIAN;
+		case 'student':
 		default:
 			return SubscriptionTier.STUDENT;
 	}

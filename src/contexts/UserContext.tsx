@@ -10,6 +10,7 @@ import React, {
 import { User as AuthUser } from '@supabase/supabase-js';
 import { User, Profile, SubscriptionTier, UserMetadata } from '@/types/user';
 import supabase from '@/lib/supabaseClient';
+import { generateUsername } from '@/utils/usernameGenerator';
 
 interface UserContextType {
 	user: User | null;
@@ -63,10 +64,8 @@ export function UserProvider({ children }: { children: ReactNode }) {
 						session.user.id,
 					);
 
-					// Use email or generate a username, no need for name splitting
-					const username =
-						session.user.email?.split('@')[0] ||
-						`user_${session.user.id.substring(0, 8)}`;
+					// Generate a username using our generator
+					const username = generateUsername();
 
 					// Use API endpoint instead of direct supabaseAdmin
 					try {
@@ -98,8 +97,6 @@ export function UserProvider({ children }: { children: ReactNode }) {
 							email: session.user.email,
 							profile_id: session.user.id,
 							username: username,
-							full_name:
-								session.user.user_metadata?.full_name || '',
 							avatar_url:
 								session.user.user_metadata?.avatar_url || '',
 							profile: {
@@ -124,17 +121,13 @@ export function UserProvider({ children }: { children: ReactNode }) {
 					id: session.user.id,
 					email: session.user.email,
 					profile_id: profileData.id,
-					username:
-						profileData.username ||
-						session.user.email?.split('@')[0] ||
-						`user_${session.user.id.substring(0, 8)}`,
-					full_name: session.user.user_metadata?.full_name || '',
+					username: profileData.username || generateUsername(),
 					avatar_url:
 						session.user.user_metadata?.avatar_url ||
 						profileData.avatar_url,
 					profile: {
 						...profileData,
-						subscription_tier: mapTierToEnum(profileData.tier), // Map string tier to enum
+						subscription_tier: mapTierToEnum(profileData.tier),
 					} as Profile,
 				};
 
@@ -193,6 +186,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
 	};
 
 	const updateTier = async (tier: SubscriptionTier) => {
+		setIsLoading(true);
+		setError(null);
+
 		if (!user) {
 			console.error('Cannot update tier: No user logged in');
 			return;
@@ -203,7 +199,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
 			const { error } = await supabase
 				.from('profiles')
 				.update({
-					tier: getTierString(tier), // Use string representation for tier
+					subscription_tier: tier,
 					updated_at: new Date().toISOString(),
 				})
 				.eq('id', user.id);
@@ -219,14 +215,15 @@ export function UserProvider({ children }: { children: ReactNode }) {
 					...prevUser,
 					profile: {
 						...prevUser.profile!,
-						subscription_tier: tier, // Keep using enum in the UI
-						tier: getTierString(tier), // Add string tier to profile
+						subscription_tier: tier,
 					},
 				};
 			});
 		} catch (err) {
 			console.error('Error updating tier:', err);
 			throw err;
+		} finally {
+			setIsLoading(false);
 		}
 	};
 
@@ -258,19 +255,5 @@ function mapTierToEnum(tier: string): SubscriptionTier {
 			return SubscriptionTier.HISTORIAN;
 		default:
 			return SubscriptionTier.STUDENT;
-	}
-}
-
-// Helper function to convert enum to string
-function getTierString(tier: SubscriptionTier): string {
-	switch (tier) {
-		case SubscriptionTier.STUDENT:
-			return 'student';
-		case SubscriptionTier.SCHOLAR:
-			return 'scholar';
-		case SubscriptionTier.HISTORIAN:
-			return 'historian';
-		default:
-			return 'student';
 	}
 }

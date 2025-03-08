@@ -7,9 +7,7 @@ export enum SubscriptionTier {
 export interface Profile {
 	id: string;
 	username: string;
-	full_name?: string;
 	avatar_url?: string;
-	website?: string;
 	subscription_tier: SubscriptionTier;
 	updated_at?: string;
 }
@@ -18,7 +16,6 @@ export interface User {
 	id: string;
 	email?: string;
 	username?: string;
-	full_name?: string;
 	avatar_url?: string;
 	billing_address?: any;
 	payment_method?: any;

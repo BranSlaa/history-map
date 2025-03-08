@@ -3,8 +3,14 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/context/AuthContext';
 import { UserProvider } from '@/contexts/UserContext';
 import { Header } from './components/Header';
+import dynamic from 'next/dynamic';
 import './globals.css';
 import './output.css';
+import UsernamePrompt from '@/components/UsernamePrompt';
+// Import UsernamePrompt with dynamic loading to prevent SSR issues
+// const UsernamePrompt = dynamic(() => import('@/components/UsernamePrompt'), {
+// 	ssr: false,
+// });
 
 export const metadata: Metadata = {
 	title: 'History Map',
@@ -31,6 +37,8 @@ export default function RootLayout({
 									<main>{children}</main>
 								</div>
 							</div>
+							{/* UsernamePrompt will only render if the user needs to set a username */}
+							<UsernamePrompt />
 						</ThemeProvider>
 					</body>
 				</html>
