@@ -52,13 +52,46 @@ export const createFetchLastEvent = (supabase: SupabaseClient) => {
 			}
 			
 			// Check for currentEventId in different levels of the data structure
-			let currentEventId = pathData[0].currentEventId || pathData[0].path_data && pathData[0].path_data.currentEventId;
+			let currentEventId = pathData[0].currentEventId || 
+				(pathData[0].path_data && pathData[0].path_data.currentEventId);
 			
 			console.log(`[${mountId.current}] Current event ID:`, currentEventId);
 			
 			if (!currentEventId) {
 				console.log(`[${mountId.current}] No current event ID found in path data`);
 				return null;
+			}
+			
+			// Ensure the event ID is in the correct format for UUID
+			// UUIDs should be exactly 36 characters in 8-4-4-4-12 format
+			if (currentEventId) {
+				// Remove any existing hyphens
+				const cleanId = currentEventId.replace(/-/g, '');
+				
+				// If it's too long, truncate it to correct length (32 characters without hyphens)
+				const truncatedId = cleanId.length > 32 ? cleanId.substring(0, 32) : cleanId;
+				
+				// Format as standard UUID with hyphens in the right places
+				try {
+					currentEventId = 
+						truncatedId.substring(0, 8) + '-' + 
+						truncatedId.substring(8, 12) + '-' + 
+						truncatedId.substring(12, 16) + '-' +
+						truncatedId.substring(16, 20) + '-' +
+						truncatedId.substring(20, 32);
+					
+					console.log(`[${mountId.current}] Formatted UUID:`, currentEventId);
+					
+					// Validate the final format
+					const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+					if (!uuidPattern.test(currentEventId)) {
+						console.error(`[${mountId.current}] UUID still invalid after formatting:`, currentEventId);
+						return null;
+					}
+				} catch (e) {
+					console.error(`[${mountId.current}] Failed to format UUID:`, e);
+					return null;
+				}
 			}
 			
 			// Fetch the event from the database

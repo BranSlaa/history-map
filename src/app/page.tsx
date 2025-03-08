@@ -66,6 +66,19 @@ const Popup = dynamic(() => import('react-leaflet').then(mod => mod.Popup), {
 	ssr: false,
 });
 
+// Dynamically import the map component with no SSR
+const MapComponent = dynamic(
+	() => import('../components/Map').then(mod => mod.MapComponent),
+	{
+		ssr: false,
+		loading: () => (
+			<div className="w-full h-[600px] flex items-center justify-center bg-gray-100">
+				<p>Loading map...</p>
+			</div>
+		),
+	},
+);
+
 const App = () => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
@@ -515,13 +528,50 @@ const App = () => {
 		event => event.year >= yearRange[0] && event.year <= yearRange[1],
 	);
 
+	// Add isMounted state
+	const [isMounted, setIsMounted] = useState(false);
+
+	useEffect(() => {
+		// Set isMounted to true when component mounts
+		setIsMounted(true);
+
+		return () => {
+			// Set isMounted to false when component unmounts
+			setIsMounted(false);
+		};
+	}, []);
+
+	// Add these wrapper functions before the return statement
+	const handleFetchEventsWrapper = () => {
+		// Provide default values or let the function handle missing params
+		return fetchEventsCallbackWrapper('', '', undefined, undefined, false);
+	};
+
+	const handleFetchLastEventWrapper = () => {
+		return fetchLastEvent(user?.id || '');
+	};
+
+	const handleRecordEventInteractionWrapper = (event: Event) => {
+		return recordEventInteractionWrapper(event.id);
+	};
+
+	const handleCenterMapOnEventWrapper = (event: Event) => {
+		if (mapRef.current) {
+			centerMapOnEvent(mapRef.current, event);
+		}
+	};
+
+	const handleIsEventAlreadyInListsWrapper = (event: Event) => {
+		return isEventAlreadyInLists(event.id);
+	};
+
+	// Fix the eventPanelRef type
+	const typedEventPanelRef = eventPanelRef as React.RefObject<HTMLDivElement>;
+
 	// Don't render the main content until initialization is complete
 	if (isInitializing) {
 		return (
-			<div className="grid grid-cols-12 grid-rows-[auto_1fr_1fr] h-screen bg-amber-50 dark:bg-gray-900">
-				<div className="col-span-12">
-					<Header />
-				</div>
+			<div className="grid grid-cols-12 h-screen">
 				<div className="col-span-12 row-span-2 flex items-center justify-center">
 					<div className="text-center p-8">
 						<div className="inline-block h-12 w-12 animate-spin rounded-full border-4 border-solid border-amber-600 border-r-transparent dark:border-amber-400"></div>
@@ -535,169 +585,85 @@ const App = () => {
 	}
 
 	return (
-		<div className="grid grid-cols-12 grid-rows-[auto_1fr_1fr] h-screen">
-			{/* Header row - spans all columns */}
-			<div className="col-span-12">
-				<Header />
-			</div>
-
-			{/* Sidebar - Event Panel */}
-			<div
-				className={`col-span-12  md:row-span-2 ${isPanelCollapsed ? 'md:col-span-1' : 'md:col-span-3'}  bg-white dark:bg-gray-800 shadow-lg relative z-10`}
-			>
-				<div className="h-full flex">
-					<div className="p-2 flex-grow overflow-y-auto">
-						<div ref={eventPanelRef}>
-							<EventPanel
-								events={currentEvents}
-								selectedEvent={selectedEvent}
-								onSelectEvent={handleEventSelection}
-								chosenEvents={chosenEvents}
-							/>
-							<InformationPanel
-								event={selectedEvent}
-								onFetchMore={fetchMoreEventsWrapper}
-							/>
-						</div>
-					</div>
-					<button
-						onClick={togglePanel}
-						className="bg-amber-600 hover:bg-amber-700 text-white flex items-center justify-center absolute right-0 top-1/2 transform -translate-y-1/2 translate-x-1/2 p-2"
-					>
-						{isPanelCollapsed ? '→' : '←'}
-					</button>
-				</div>
-			</div>
-
-			{/* Main map area */}
-			<div className="col-span-12 md:col-span-9 relative md:row-span-2">
-				{/* Welcome Back component - overlay on map */}
-				{shouldShowWelcomeBack(lastEvent, currentEvents) && (
-					<div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 w-full max-w-2xl flex justify-center items-center">
-						<WelcomeBack
-							lastEvent={lastEvent}
-							onContinue={handleContinueExplorationWrapper}
-							onNewSearch={handleNewSearchWrapper}
-							fetchEventsCallback={fetchEventsCallbackWrapper}
-							topic={topic}
-							setTopic={setTopic}
-						/>
-					</div>
-				)}
-
-				<button
-					className="absolute top-4 right-4 z-20 w-fit max-w-2xl bg-amber-600 text-white font-bold text-lg px-4 py-2 rounded-lg hover:bg-amber-700 transition-colors"
-					onClick={() => {
-						setShowWelcomeBack(true);
-					}}
-				>
-					Show Welcome Back
-				</button>
-
-				{/* Year filter slider - overlay on bottom of map */}
-				<div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-20 w-full max-w-2xl">
-					<div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg px-4 py-8 mx-2">
-						<Slider
-							range
-							min={-10000}
-							max={2025}
-							defaultValue={[-10000, 2025]}
-							value={yearRange}
-							onChange={value =>
-								setYearRange(value as [number, number])
-							}
-							marks={{
-								'-10000': '10000 BCE',
-								'-5000': '5000 BCE',
-								'-2000': '2000 BCE',
-								'0': '0',
-								'1000': '1000 CE',
-								'2000': '2000 CE',
-							}}
-						/>
-					</div>
-				</div>
-
-				{/* Subject filter bar - overlay on left side of map */}
-				<div className="absolute bottom-4 left-4 z-20 w-fit">
-					<SubjectFilterBar
-						subjects={uniqueSubjects}
-						onFilterChange={handleFilterChange}
-					/>
-				</div>
-
-				{/* Map container */}
+		<div className="flex flex-col h-screen bg-white">
+			<div className="flex-1 flex">
 				<div className="h-full w-full">
 					<ClientOnly>
-						<MapContainer
-							center={[20, 0]}
-							zoom={2}
-							style={{ height: '100%', width: '100%' }}
-							className="z-0"
-							ref={mapRef}
-						>
-							<TileLayer
-								url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-								attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-							/>
-							<AdjustMapView events={displayedEvents} />
-							{/* Use a Set to track rendered event IDs and prevent duplicates */}
-							{(() => {
-								// Create a Set to track which event IDs we've already rendered
-								const renderedEventIds = new Set();
-
-								// Filter out duplicate events
-								return events
-									.filter(event => {
-										if (renderedEventIds.has(event.id)) {
-											return false; // Skip this event, it's a duplicate
-										}
-										renderedEventIds.add(event.id);
-										return true;
-									})
-									.map(event => (
-										<Marker
-											key={event.id}
-											position={[
-												event.lat || 0,
-												event.lon || 0,
-											]}
-											icon={getEventMarkerIcon(
-												event,
-												selectedEvent?.id || null,
-												interactedEventIds,
-												{
-													defaultIcon:
-														defaultIcon.current,
-													selectedIcon:
-														selectedIcon.current,
-													interactedIcon:
-														interactedIcon.current,
-												},
-											)}
-											eventHandlers={{
-												click: () => {
-													handleEventSelection(event);
-												},
-											}}
-										>
-											<Popup>
-												<div>
-													<h3 className="font-bold">
-														{event.title}
-													</h3>
-													<p>{event.year}</p>
-												</div>
-											</Popup>
-										</Marker>
-									));
-							})()}
-						</MapContainer>
+						<MapComponent
+							events={events}
+							handleEventSelection={handleEventSelection}
+							handleFilterChange={handleFilterChange}
+							handleContinueExploration={
+								handleContinueExplorationWrapper
+							}
+							handleNewSearch={handleNewSearchWrapper}
+							handleFetchMore={fetchMoreEventsWrapper}
+							handleFetchEvents={handleFetchEventsWrapper}
+							handleShowWelcomeBack={shouldShowWelcomeBack}
+							handleFetchLastEvent={handleFetchLastEventWrapper}
+							handleFetchUserPathData={fetchUserPathData}
+							handleRecordEventInteraction={
+								handleRecordEventInteractionWrapper
+							}
+							handleSyncEvents={syncEvents}
+							handleMarkInteractedEvents={events => {
+								setEvents(events);
+								setInteractedEventIds(
+									new Set(events.map(event => event.id)),
+								);
+							}}
+							handleHighlightLocations={locations => {
+								setHighlightedLocations(new Set(locations));
+							}}
+							handleScrollToSelectedEvent={scrollToSelectedEvent}
+							handleCenterMapOnEvent={
+								handleCenterMapOnEventWrapper
+							}
+							handleMapRef={mapRef}
+							handleEvents={events}
+							handleCurrentEvents={currentEvents}
+							handleChosenEvents={chosenEvents}
+							handleUnchosenEvents={unchosenEvents}
+							handleSelectedEvent={selectedEvent}
+							handleSetSelectedEvent={setSelectedEvent}
+							handleSetCurrentEvents={setCurrentEvents}
+							handleSetChosenEvents={setChosenEvents}
+							handleSetUnchosenEvents={setUnchosenEvents}
+							handleSetInteractedEventIds={setInteractedEventIds}
+							handleSetEvents={setEvents}
+							handleIsEventAlreadyInLists={
+								handleIsEventAlreadyInListsWrapper
+							}
+							handleTopic={topic}
+							handleSetTopic={setTopic}
+							handleLoading={loading}
+							handleSetLoading={setLoading}
+							handleIsPanelCollapsed={isPanelCollapsed}
+							handleSetIsPanelCollapsed={setIsPanelCollapsed}
+							handleFilterSubject={filterSubject}
+							handleSetFilterSubject={setFilterSubject}
+							handleIsShowingWelcomeBack={showWelcomeBack}
+							handleSetShowWelcomeBack={setShowWelcomeBack}
+							handleLastEvent={lastEvent}
+							handleSetLastEvent={setLastEvent}
+							handleYearRange={yearRange}
+							handleSetYearRange={setYearRange}
+							handleHighlightedLocations={highlightedLocations}
+							handleSetHighlightedLocations={
+								setHighlightedLocations
+							}
+							handleIsFirstMount={isFirstMount.current}
+							handleIsMounted={isMounted}
+							handleMountId={mountId.current}
+							handleIsInitializing={isInitializing}
+							handleSetIsInitializing={setIsInitializing}
+							handleMarkedInteractionsRef={markedInteractionsRef}
+							handleEventPanelRef={typedEventPanelRef}
+							handleUpdatePathData={updatePathData}
+						/>
 					</ClientOnly>
 				</div>
 			</div>
-
-			{/* Add Featured Quizzes Section */}
 			<FeaturedQuizzes />
 		</div>
 	);

@@ -1,21 +1,10 @@
 import type { Metadata } from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
-import { UserProvider } from '@/contexts/UserContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { AuthProvider } from '@/context/AuthContext';
+import { UserProvider } from '@/contexts/UserContext';
 import { Header } from './components/Header';
 import './globals.css';
 import './output.css';
-
-const geistSans = Geist({
-	variable: '--font-geist-sans',
-	subsets: ['latin'],
-});
-
-const geistMono = Geist_Mono({
-	variable: '--font-geist-mono',
-	subsets: ['latin'],
-});
 
 export const metadata: Metadata = {
 	title: 'History Map',
@@ -32,11 +21,16 @@ export default function RootLayout({
 		<AuthProvider>
 			<UserProvider>
 				<html lang="en" className="h-full">
-					<body
-						className={`${geistSans.variable} ${geistMono.variable} antialiased bg-white dark:bg-stone-900 text-stone-800 dark:text-amber-100 h-full`}
-					>
+					<body className="antialiased bg-white dark:bg-stone-900 text-stone-800 dark:text-amber-100 h-full font-serif">
 						<ThemeProvider>
-							<main>{children}</main>
+							<div className="grid grid-cols-12 grid-rows-[auto_1fr] min-h-screen">
+								<div className="col-span-12">
+									<Header />
+								</div>
+								<div className="col-span-12">
+									<main>{children}</main>
+								</div>
+							</div>
 						</ThemeProvider>
 					</body>
 				</html>

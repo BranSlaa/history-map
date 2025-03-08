@@ -5,113 +5,107 @@ import { createClient } from '@supabase/supabase-js';
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
 import { cookies } from 'next/headers';
 
+// Create a Supabase client
+const supabaseAdmin = createClient(
+	process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+	process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+);
 
 export async function GET(request: NextRequest) {
-	const url = new URL(request.url);
-	const featured = url.searchParams.get('featured') === 'true';
-	const limit = parseInt(url.searchParams.get('limit') || '10');
-	const userId = url.searchParams.get('user_id');
-	
 	try {
-		// Create Supabase client
+		// Get query parameters
+		const searchParams = request.nextUrl.searchParams;
+		const userId = searchParams.get('userId');
+		const difficultyLevel = searchParams.get('difficulty');
+		const limit = searchParams.get('limit') || '20';
+
+		// Create authenticated Supabase client with proper cookie handling
 		const cookieStore = cookies();
-		const supabase = createServerComponentClient({ cookies: () => cookieStore });
-		
-		// Start building the query
-		let query = supabase
-			.from('quizzes')
-			.select(`
-				id, title, description, difficulty, subject, topic, question_count, created_at, updated_at, user_id,
-				quiz_questions:quiz_questions(
-					id,
-					question_text,
-					explanation,
-					difficulty,
-					points,
-					question_order
-				),
-				quiz_related_events:quiz_related_events(
-					event_id,
-					event_metadata
-				)
-			`)
-			.order('created_at', { ascending: false });
-		
-		// If userId is provided, filter by user
+		const supabase = createServerComponentClient({ 
+			cookies: () => cookieStore 
+		});
+
+		// If userId is provided, fetch quizzes for that specific user only
 		if (userId) {
-			query = query.eq('user_id', userId);
-		}
-		
-		// For featured quizzes, limit and filter by most taken or highest rated if available
-		// This is a simple implementation - could be enhanced with more complex logic
-		if (featured) {
-			query = query.limit(5);
+			const { data: { user } } = await supabase.auth.getUser();
+			
+			// Only allow fetching your own quizzes unless an admin
+			if (!user || (user.id !== userId)) {
+				return NextResponse.json(
+					{ error: 'Unauthorized access' },
+					{ status: 403 }
+				);
+			}
+			
+			// Fetch quizzes for the specific user
+			let query = supabase.from('quizzes').select('*').eq('user_id', userId);
+			
+			// Apply difficulty filter if provided
+			if (difficultyLevel) {
+				query = query.eq('difficulty', difficultyLevel);
+			}
+			
+			const { data, error } = await query.order('created_at', { ascending: false });
+			
+			if (error) {
+				console.error('Error fetching quizzes:', error);
+				return NextResponse.json(
+					{ error: 'Failed to fetch quizzes' },
+					{ status: 500 }
+				);
+			}
+			
+			return NextResponse.json(data);
 		} else {
-			query = query.limit(limit);
-		}
-		
-		const { data, error } = await query;
-		
-		if (error) {
-			console.error('Error fetching quizzes:', error);
-			return NextResponse.json(
-				{ error: 'Failed to fetch quizzes' },
-				{ status: 500 }
-			);
-		}
-		
-		// Add user profile data to each quiz if possible
-		const userIds = data
-			.map(quiz => quiz.user_id)
-			.filter((id, index, self) => id && self.indexOf(id) === index);
-			
-		if (userIds.length > 0) {
-			const { data: profilesData } = await supabase
-				.from('profiles')
-				.select('id, username, first_name, last_name')
-				.in('id', userIds);
+			// For all quizzes, just fetch the quizzes without trying to join with creator
+			// since the relationship between quizzes and user_id is not properly set up
+			let query = supabase.from('quizzes').select('*');
 				
-			// Create a map of profiles with proper type annotation
-			const profilesMap: Record<string, any> = (profilesData || []).reduce((acc: Record<string, any>, profile: any) => {
-				acc[profile.id] = profile;
-				return acc;
-			}, {});
+			// Apply difficulty filter if provided
+			if (difficultyLevel) {
+				query = query.eq('difficulty', difficultyLevel);
+			}
 			
-			// Add profile data to quizzes
-			data.forEach((quiz: any) => {
-				if (quiz.user_id && profilesMap[quiz.user_id]) {
-					quiz.creator = profilesMap[quiz.user_id];
-				}
-			});
+			const { data, error } = await query
+				.order('created_at', { ascending: false })
+				.limit(parseInt(limit));
+				
+			if (error) {
+				console.error('Error fetching quizzes:', error);
+				return NextResponse.json(
+					{ error: 'Failed to fetch quizzes' },
+					{ status: 500 }
+				);
+			}
+			
+			// For each quiz, if we have user_id, fetch the creator's profile separately
+			// This is a workaround since the direct join doesn't work
+			if (data && data.length > 0) {
+				const quizzesWithCreators = await Promise.all(
+					data.map(async (quiz) => {
+						if (quiz.user_id) {
+							const { data: profileData } = await supabase
+								.from('profiles')
+								.select('id, username, first_name, last_name')
+								.eq('id', quiz.user_id)
+								.single();
+								
+							return {
+								...quiz,
+								creator: profileData
+							};
+						}
+						return quiz;
+					})
+				);
+				
+				return NextResponse.json(quizzesWithCreators);
+			}
+			
+			return NextResponse.json(data);
 		}
-		
-		// Format the quizzes for the client
-		const formattedQuizzes = data.map((quiz: any) => ({
-			id: quiz.id,
-			title: quiz.title,
-			description: quiz.description,
-			subject: quiz.subject,
-			topic: quiz.topic,
-			difficulty: quiz.difficulty,
-			question_count: quiz.question_count || quiz.quiz_questions?.length || 0,
-			created_at: quiz.created_at,
-			creator: quiz.creator ? {
-				id: quiz.creator.id,
-				username: quiz.creator.username,
-				first_name: quiz.creator.first_name,
-				last_name: quiz.creator.last_name
-			} : undefined,
-			questions: quiz.quiz_questions?.map((question: any) => ({
-				id: question.id,
-				text: question.question_text,
-				explanation: question.explanation || '',
-				options: [] // We don't fetch options in the list view for performance reasons
-			})) || []
-		}));
-		
-		return NextResponse.json(formattedQuizzes);
 	} catch (error) {
-		console.error('Unexpected error fetching quizzes:', error);
+		console.error('Unexpected error in GET /api/quizzes:', error);
 		return NextResponse.json(
 			{ error: 'An unexpected error occurred' },
 			{ status: 500 }
@@ -122,28 +116,58 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
 	try {
 		const body = await request.json();
+		const cookieStore = cookies();
+		const supabase = createServerComponentClient({ 
+			cookies: () => cookieStore 
+		});
+		
+		// Get the authenticated user
+		const { data: { user } } = await supabase.auth.getUser();
+		
+		if (!user) {
+			return NextResponse.json(
+				{ error: 'Unauthorized: You must be logged in to create a quiz' },
+				{ status: 401 }
+			);
+		}
 
 		// Validate required fields
-		if (!body.title || !body.description || !body.difficulty) {
+		if (!body.title || !body.description || !body.difficulty || !body.subject || !body.topic) {
 			return NextResponse.json(
-				{ error: 'Missing required fields' },
+				{ error: 'Missing required fields: title, description, difficulty, subject, and topic are required' },
 				{ status: 400 },
 			);
 		}
 
-		// In a real app, you would save to a database
+		// Create the new quiz with all required fields
 		const newQuiz: Quiz = {
 			id: uuidv4(),
 			title: body.title,
 			description: body.description,
 			difficulty: body.difficulty,
+			subject: body.subject,
+			topic: body.topic,
+			question_count: body.question_count || 0,
+			user_id: user.id,
+			related_event_ids: body.related_event_ids || [],
 			created_at: new Date().toISOString(),
 		};
 
-		// For mock purposes, we could add to our array
-		// mockQuizzes.push(newQuiz);
+		// Insert the quiz into the database
+		const { data, error } = await supabase
+			.from('quizzes')
+			.insert(newQuiz)
+			.select();
+			
+		if (error) {
+			console.error('Error creating quiz in database:', error);
+			return NextResponse.json(
+				{ error: 'Failed to save quiz to database' },
+				{ status: 500 },
+			);
+		}
 
-		return NextResponse.json(newQuiz, { status: 201 });
+		return NextResponse.json(data[0], { status: 201 });
 	} catch (error) {
 		console.error('Error creating quiz:', error);
 		return NextResponse.json(

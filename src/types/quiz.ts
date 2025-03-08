@@ -5,12 +5,14 @@ export interface Quiz {
 	difficulty: 'beginner' | 'intermediate' | 'advanced';
 	created_at: string;
 	updated_at?: string;
+	subject: string;
+	topic: string;
+	question_count: number;
+	user_id: string;
+	path_id?: string;
+	search_term?: string;
+	related_event_ids: string[];
 	questions?: Question[];
-	// Add fields for our public quizzes display
-	subject?: string;
-	topic?: string;
-	question_count?: number;
-	user_id?: string;
 	creator?: {
 		id: string;
 		username?: string;
@@ -31,7 +33,7 @@ export interface Question {
 
 export interface QuestionOption {
 	id: string;
-	question_id: string;
+	quiz_question_id: string;
 	text: string;
 	is_correct: boolean;
 }

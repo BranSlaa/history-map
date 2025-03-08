@@ -97,7 +97,7 @@ CREATE TABLE quiz_answers (
 -- Create indexes for performance
 CREATE INDEX idx_quizzes_user_id ON quizzes(user_id);
 CREATE INDEX idx_quiz_questions_quiz_id ON quiz_questions(quiz_id);
-CREATE INDEX idx_quiz_options_question_id ON quiz_options(quiz_question_id);
+CREATE INDEX idx_quiz_options_quiz_question_id ON quiz_options(quiz_question_id);
 CREATE INDEX idx_quiz_related_events_quiz_id ON quiz_related_events(quiz_id);
 CREATE INDEX idx_quiz_attempts_user_id ON quiz_attempts(user_id);
 CREATE INDEX idx_quiz_attempts_quiz_id ON quiz_attempts(quiz_id);

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import supabase from '@/lib/supabaseClient';
+import { createServerComponentClient } from '@supabase/auth-helpers-nextjs';
+import { cookies } from 'next/headers';
 
 export async function GET(
     request: NextRequest,
@@ -12,6 +14,15 @@ export async function GET(
     }
     
     try {
+        // Create authenticated Supabase client with proper cookie handling
+        const cookieStore = cookies();
+        const authClient = createServerComponentClient({ 
+            cookies: () => cookieStore 
+        });
+        
+        // Get the current authenticated user
+        const { data: { user } } = await authClient.auth.getUser();
+        
         // Fetch quiz details with the correct field names
         const { data: quiz, error: quizError } = await supabase
             .from('quizzes')
@@ -37,22 +48,53 @@ export async function GET(
             return NextResponse.json({ error: 'Quiz not found' }, { status: 404 });
         }
 
+        // Check if the current user has already taken this quiz
+        let userAttempt = null;
+        if (user) {
+            const { data: attempts, error: attemptsError } = await supabase
+                .from('quiz_attempts')
+                .select('id, score, completed_at, answers')
+                .eq('quiz_id', quizId)
+                .eq('user_id', user.id)
+                .eq('completed', true)
+                .order('completed_at', { ascending: false })
+                .limit(1);
+                
+            if (!attemptsError && attempts && attempts.length > 0) {
+                userAttempt = attempts[0];
+            }
+        }
+
         // Separately fetch the creator information if user_id exists
         let creator = null;
         if (quiz.user_id) {
             try {
                 const { data: userData, error: userError } = await supabase
                     .from('profiles')
-                    .select('id, username, first_name, last_name')
+                    .select('id, username')
                     .eq('id', quiz.user_id)
                     .single();
                     
                 if (!userError && userData) {
-                    creator = userData;
+                    creator = {
+                        id: userData.id,
+                        username: userData.username,
+                    };
+                    
+                    console.log('Creator data retrieved:', creator);
+                } else {
+                    console.error('Error fetching creator data or no data found:', userError);
+                    creator = { 
+                        id: quiz.user_id,
+                        username: `user_${quiz.user_id.substring(0, 6)}`
+                    };
                 }
             } catch (err) {
                 console.error('Error fetching creator data:', err);
-                // Continue without creator data
+                creator = { 
+                    id: quiz.user_id,
+                    username: `user_${quiz.user_id.substring(0, 6)}`
+                };
             }
         }
         
@@ -67,14 +109,15 @@ export async function GET(
             question_count: quiz.question_count || quiz.quiz_questions?.length || 0,
             created_at: quiz.created_at,
             creator: creator || { id: quiz.user_id },
+            previousAttempt: userAttempt,
             questions: quiz.quiz_questions?.map((question: any) => ({
                 id: question.id,
-                text: question.question_text,
+                question_text: question.question_text,
                 explanation: question.explanation || '',
                 options: question.quiz_options?.map((option: any) => ({
                     id: option.id,
-                    text: option.option_text,
-                    isCorrect: option.is_correct
+                    option_text: option.option_text,
+                    is_correct: option.is_correct
                 })) || []
             })) || []
         };

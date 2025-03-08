@@ -4,25 +4,62 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import { Header } from '../components/Header';
 import { Quiz } from '@/types/quiz';
+import { getNextQuizSuggestions } from '@/utils/adaptiveDifficultyUtils';
+import supabase from '@/lib/supabaseClient';
+
+interface QuizWithCreator extends Quiz {
+	creator?: {
+		id: string;
+		username?: string;
+		first_name?: string;
+		last_name?: string;
+	};
+}
 
 const PublicQuizzesPage: React.FC = () => {
 	const { user, profile } = useAuth();
 	const router = useRouter();
-	const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+	const [quizzes, setQuizzes] = useState<QuizWithCreator[]>([]);
+	const [recommendedQuizzes, setRecommendedQuizzes] = useState<
+		QuizWithCreator[]
+	>([]);
 	const [isLoading, setIsLoading] = useState(true);
 	const [filter, setFilter] = useState('all'); // all, beginner, intermediate, advanced
 
-	// Fetch public quizzes
+	// Fetch public quizzes and recommended quizzes
 	useEffect(() => {
-		const fetchPublicQuizzes = async () => {
+		const fetchQuizzes = async () => {
 			setIsLoading(true);
 			try {
+				// Fetch public quizzes
 				const response = await fetch('/api/quizzes?limit=50');
 				if (response.ok) {
 					const data = await response.json();
 					setQuizzes(data);
+
+					// If user is logged in, fetch recommended quizzes
+					if (user?.id) {
+						const { data: attempts } = await supabase
+							.from('quiz_attempts')
+							.select('*')
+							.eq('user_id', user.id)
+							.order('completed_at', { ascending: false })
+							.limit(1);
+
+						const currentDifficulty = attempts?.[0]?.quiz_id
+							? data.find(
+									(q: Quiz) => q.id === attempts[0].quiz_id,
+								)?.difficulty || 'beginner'
+							: 'beginner';
+
+						const suggestions = await getNextQuizSuggestions(
+							user.id,
+							currentDifficulty,
+							supabase,
+						);
+						setRecommendedQuizzes(suggestions);
+					}
 				} else {
 					const errorData = await response
 						.json()
@@ -40,8 +77,8 @@ const PublicQuizzesPage: React.FC = () => {
 			}
 		};
 
-		fetchPublicQuizzes();
-	}, []);
+		fetchQuizzes();
+	}, [user?.id]);
 
 	// Filter quizzes based on difficulty
 	const filteredQuizzes =
@@ -74,13 +111,13 @@ const PublicQuizzesPage: React.FC = () => {
 	const getDifficultyBadgeClass = (difficulty: string) => {
 		switch (difficulty) {
 			case 'beginner':
-				return 'bg-green-100 text-green-800';
+				return 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100';
 			case 'intermediate':
-				return 'bg-blue-100 text-blue-800';
+				return 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100';
 			case 'advanced':
-				return 'bg-red-100 text-red-800';
+				return 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100';
 			default:
-				return 'bg-gray-100 text-gray-800';
+				return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-100';
 		}
 	};
 
@@ -91,146 +128,206 @@ const PublicQuizzesPage: React.FC = () => {
 		router.push(`/quizzes/${quizId}`);
 	};
 
+	// Helper function to get creator name display
+	const getCreatorName = (quiz: QuizWithCreator) => {
+		if (!quiz.creator) return 'Anonymous';
+
+		if (quiz.creator.username) {
+			return quiz.creator.username;
+		}
+
+		if (quiz.creator.first_name || quiz.creator.last_name) {
+			return `${quiz.creator.first_name || ''} ${quiz.creator.last_name || ''}`.trim();
+		}
+
+		return 'Anonymous';
+	};
+
 	if (isLoading) {
 		return (
-			<div className="container mx-auto p-6">
-				<Header />
-				<div className="max-w-6xl mx-auto mt-10">
-					<h1 className="text-3xl font-bold mb-6">Public Quizzes</h1>
-					<div className="flex justify-center items-center h-64">
-						<p className="text-lg">Loading quizzes...</p>
-					</div>
-				</div>
+			<div className="flex items-center justify-center h-screen">
+				<div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-amber-500"></div>
 			</div>
 		);
 	}
 
 	return (
-		<div className="container mx-auto p-6">
-			<Header />
-			<div className="max-w-6xl mx-auto mt-10">
-				<div className="flex items-center justify-between mb-6">
-					<h1 className="text-3xl font-bold">Public Quizzes</h1>
-					<div className="flex space-x-2">
+		<div className="px-4 py-6">
+			<h1 className="text-3xl font-bold mb-6 text-white text-center">
+				Public Quizzes
+			</h1>
+
+			<div className="max-w-7xl mx-auto">
+				{user && recommendedQuizzes.length > 0 && (
+					<div className="mb-8">
+						<h2 className="text-2xl font-bold mb-4 text-amber-500">
+							Recommended For You
+						</h2>
+						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+							{recommendedQuizzes.map(quiz => (
+								<div
+									key={quiz.id}
+									className="bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-700"
+								>
+									<div className="p-5">
+										<div className="flex justify-between">
+											<h3 className="font-bold text-lg mb-1 truncate text-white">
+												{quiz.title}
+											</h3>
+											<span
+												className={`text-xs px-2 py-1 rounded-full ${getDifficultyBadgeClass(
+													quiz.difficulty.toLowerCase(),
+												)}`}
+											>
+												{quiz.difficulty}
+											</span>
+										</div>
+										<p className="text-gray-300 text-sm mb-3">
+											{quiz.description}
+										</p>
+										<div className="flex items-center text-sm text-gray-400 mb-2">
+											<span className="mr-3">
+												{quiz.question_count} questions
+											</span>
+											<span>
+												{getRelativeTimeString(
+													quiz.created_at,
+												)}
+											</span>
+										</div>
+										{quiz.creator && (
+											<div className="flex items-center text-sm text-amber-400 mb-3">
+												<span>
+													Created by{' '}
+													{getCreatorName(quiz)}
+												</span>
+											</div>
+										)}
+										<button
+											onClick={() =>
+												handleTakeQuiz(quiz.id)
+											}
+											className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded"
+										>
+											Take Quiz
+										</button>
+									</div>
+								</div>
+							))}
+						</div>
+					</div>
+				)}
+
+				<div>
+					<h2 className="text-2xl font-bold mb-4 text-amber-500">
+						All Quizzes
+					</h2>
+					<div className="mb-6 flex flex-wrap gap-3">
 						<button
 							onClick={() => setFilter('all')}
-							className={`px-4 py-2 rounded ${
+							className={`px-4 py-2 rounded-full ${
 								filter === 'all'
-									? 'bg-blue-500 text-white'
-									: 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+									? 'bg-amber-600 text-white'
+									: 'bg-gray-800 text-gray-300 hover:bg-gray-700'
 							}`}
 						>
 							All
 						</button>
 						<button
 							onClick={() => setFilter('beginner')}
-							className={`px-4 py-2 rounded ${
+							className={`px-4 py-2 rounded-full ${
 								filter === 'beginner'
-									? 'bg-green-500 text-white'
-									: 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+									? 'bg-amber-600 text-white'
+									: 'bg-gray-800 text-gray-300 hover:bg-gray-700'
 							}`}
 						>
 							Beginner
 						</button>
 						<button
 							onClick={() => setFilter('intermediate')}
-							className={`px-4 py-2 rounded ${
+							className={`px-4 py-2 rounded-full ${
 								filter === 'intermediate'
-									? 'bg-blue-500 text-white'
-									: 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+									? 'bg-amber-600 text-white'
+									: 'bg-gray-800 text-gray-300 hover:bg-gray-700'
 							}`}
 						>
 							Intermediate
 						</button>
 						<button
 							onClick={() => setFilter('advanced')}
-							className={`px-4 py-2 rounded ${
+							className={`px-4 py-2 rounded-full ${
 								filter === 'advanced'
-									? 'bg-red-500 text-white'
-									: 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+									? 'bg-amber-600 text-white'
+									: 'bg-gray-800 text-gray-300 hover:bg-gray-700'
 							}`}
 						>
 							Advanced
 						</button>
 					</div>
-				</div>
 
-				{filteredQuizzes.length === 0 ? (
-					<div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-8 text-center">
-						<h2 className="text-xl mb-4">No quizzes found</h2>
-						<p className="mb-4">
-							{filter === 'all'
-								? 'There are no quizzes available at the moment.'
-								: `There are no ${filter} quizzes available at the moment.`}
-						</p>
-					</div>
-				) : (
-					<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-						{filteredQuizzes.map(quiz => (
-							<div
-								key={quiz.id}
-								className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-200"
-							>
-								<div className="p-6">
-									<div className="flex justify-between items-start mb-2">
-										<h2 className="text-xl font-semibold mb-2 flex-1">
-											{quiz.title}
-										</h2>
-										<span
-											className={`text-xs px-2 py-1 rounded-full ${getDifficultyBadgeClass(
-												quiz.difficulty,
-											)}`}
-										>
-											{quiz.difficulty
-												.charAt(0)
-												.toUpperCase() +
-												quiz.difficulty.slice(1)}
-										</span>
-									</div>
-									<p className="text-gray-600 dark:text-gray-300 mb-4 line-clamp-2">
-										{quiz.description}
-									</p>
-
-									<div className="text-sm text-gray-500 mb-4">
-										<p>
-											{quiz.question_count || 0} questions
+					{filteredQuizzes.length > 0 ? (
+						<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+							{filteredQuizzes.map(quiz => (
+								<div
+									key={quiz.id}
+									className="bg-gray-800 rounded-lg shadow-md overflow-hidden border border-gray-700"
+								>
+									<div className="p-5">
+										<div className="flex justify-between">
+											<h3 className="font-bold text-lg mb-1 truncate text-white">
+												{quiz.title}
+											</h3>
+											<span
+												className={`text-xs px-2 py-1 rounded-full ${getDifficultyBadgeClass(
+													quiz.difficulty.toLowerCase(),
+												)}`}
+											>
+												{quiz.difficulty}
+											</span>
+										</div>
+										<p className="text-gray-300 text-sm mb-3">
+											{quiz.description}
 										</p>
-										<p>
-											Created{' '}
-											{quiz.created_at &&
-												getRelativeTimeString(
+										<div className="flex items-center text-sm text-gray-400 mb-2">
+											<span className="mr-3">
+												{quiz.question_count} questions
+											</span>
+											<span>
+												{getRelativeTimeString(
 													quiz.created_at,
 												)}
-										</p>
+											</span>
+										</div>
 										{quiz.creator && (
-											<p>
-												By:{' '}
-												{quiz.creator.username ||
-													quiz.creator.first_name ||
-													'Anonymous'}
-											</p>
+											<div className="flex items-center text-sm text-amber-400 mb-3">
+												<span>
+													Created by{' '}
+													{getCreatorName(quiz)}
+												</span>
+											</div>
 										)}
+										<button
+											onClick={() =>
+												handleTakeQuiz(quiz.id)
+											}
+											className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded"
+										>
+											Take Quiz
+										</button>
 									</div>
-
-									<button
-										onClick={() => handleTakeQuiz(quiz.id)}
-										className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded transition-colors duration-200"
-									>
-										Take Quiz
-									</button>
 								</div>
-							</div>
-						))}
-					</div>
-				)}
-
-				<div className="mt-8 text-center">
-					<Link
-						href="/"
-						className="text-blue-500 hover:text-blue-600"
-					>
-						Back to Home
-					</Link>
+							))}
+						</div>
+					) : (
+						<div className="bg-gray-800 p-10 rounded-lg text-center border border-gray-700">
+							<p className="text-gray-300">
+								No quizzes found for the selected filter.
+							</p>
+							<p className="text-gray-400 text-sm mt-2">
+								Try selecting a different difficulty level.
+							</p>
+						</div>
+					)}
 				</div>
 			</div>
 		</div>

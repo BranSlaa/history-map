@@ -1,12 +1,13 @@
 'use client';
 
-import {
+import React, {
 	createContext,
 	useContext,
 	useEffect,
 	useState,
 	ReactNode,
 } from 'react';
+import { User as AuthUser } from '@supabase/supabase-js';
 import { User, Profile, SubscriptionTier, UserMetadata } from '@/types/user';
 import supabase from '@/lib/supabaseClient';
 
@@ -61,43 +62,59 @@ export function UserProvider({ children }: { children: ReactNode }) {
 						'Creating new profile for user',
 						session.user.id,
 					);
-					const { data: newProfile, error: createError } =
-						await supabase
-							.from('profiles')
-							.insert([
-								{
-									id: session.user.id,
-									username:
-										session.user.email?.split('@')[0] ||
-										`user_${session.user.id}`,
-									full_name:
-										session.user.user_metadata?.full_name ||
-										'',
-									avatar_url:
-										session.user.user_metadata
-											?.avatar_url || '',
-									subscription_tier: SubscriptionTier.STUDENT,
-								},
-							])
-							.select('*')
-							.single();
 
-					if (createError) {
-						throw createError;
+					// Use email or generate a username, no need for name splitting
+					const username =
+						session.user.email?.split('@')[0] ||
+						`user_${session.user.id.substring(0, 8)}`;
+
+					// Use API endpoint instead of direct supabaseAdmin
+					try {
+						const response = await fetch('/api/profile', {
+							method: 'POST',
+							headers: {
+								'Content-Type': 'application/json',
+							},
+							body: JSON.stringify({
+								id: session.user.id,
+								username: username,
+								avatar_url:
+									session.user.user_metadata?.avatar_url ||
+									'',
+								tier: 'student',
+							}),
+						});
+
+						if (!response.ok) {
+							throw new Error('Failed to create profile');
+						}
+
+						const result = await response.json();
+						const newProfile = result.data;
+
+						// Construct a user object with the profile data
+						const constructedUser: User = {
+							id: session.user.id,
+							email: session.user.email,
+							profile_id: session.user.id,
+							username: username,
+							full_name:
+								session.user.user_metadata?.full_name || '',
+							avatar_url:
+								session.user.user_metadata?.avatar_url || '',
+							profile: {
+								...newProfile,
+								subscription_tier: mapTierToEnum(
+									newProfile.tier,
+								), // Map string tier to enum
+							} as Profile,
+						};
+
+						setUser(constructedUser);
+					} catch (err) {
+						console.error('Error creating profile:', err);
+						throw err;
 					}
-
-					// Construct a user object with the profile data
-					const constructedUser: User = {
-						id: session.user.id,
-						email: session.user.email,
-						profile_id: session.user.id,
-						full_name: session.user.user_metadata?.full_name || '',
-						avatar_url:
-							session.user.user_metadata?.avatar_url || '',
-						profile: newProfile as Profile,
-					};
-
-					setUser(constructedUser);
 				} else {
 					throw profileError;
 				}
@@ -107,13 +124,18 @@ export function UserProvider({ children }: { children: ReactNode }) {
 					id: session.user.id,
 					email: session.user.email,
 					profile_id: profileData.id,
-					full_name:
-						session.user.user_metadata?.full_name ||
-						profileData.full_name,
+					username:
+						profileData.username ||
+						session.user.email?.split('@')[0] ||
+						`user_${session.user.id.substring(0, 8)}`,
+					full_name: session.user.user_metadata?.full_name || '',
 					avatar_url:
 						session.user.user_metadata?.avatar_url ||
 						profileData.avatar_url,
-					profile: profileData as Profile,
+					profile: {
+						...profileData,
+						subscription_tier: mapTierToEnum(profileData.tier), // Map string tier to enum
+					} as Profile,
 				};
 
 				setUser(constructedUser);
@@ -171,36 +193,40 @@ export function UserProvider({ children }: { children: ReactNode }) {
 	};
 
 	const updateTier = async (tier: SubscriptionTier) => {
-		setIsLoading(true);
+		if (!user) {
+			console.error('Cannot update tier: No user logged in');
+			return;
+		}
+
 		try {
-			if (!user) throw new Error('No user logged in');
-
-			// Update the profile's subscription tier instead of the user's
-			const { data, error } = await supabase
+			// Update the profile with new tier
+			const { error } = await supabase
 				.from('profiles')
-				.update({ subscription_tier: tier })
-				.eq('id', user.id)
-				.select('*')
-				.single();
+				.update({
+					tier: getTierString(tier), // Use string representation for tier
+					updated_at: new Date().toISOString(),
+				})
+				.eq('id', user.id);
 
-			if (error) throw error;
+			if (error) {
+				throw error;
+			}
 
-			// Create an updated user object with the new profile data
-			const updatedUser: User = {
-				...user,
-				profile: data as Profile,
-			};
-
-			setUser(updatedUser);
+			// Update the local user state
+			setUser(prevUser => {
+				if (!prevUser) return null;
+				return {
+					...prevUser,
+					profile: {
+						...prevUser.profile!,
+						subscription_tier: tier, // Keep using enum in the UI
+						tier: getTierString(tier), // Add string tier to profile
+					},
+				};
+			});
 		} catch (err) {
 			console.error('Error updating tier:', err);
-			setError(
-				`Error updating subscription tier: ${
-					err instanceof Error ? err.message : String(err)
-				}`,
-			);
-		} finally {
-			setIsLoading(false);
+			throw err;
 		}
 	};
 
@@ -219,4 +245,32 @@ export function useUser() {
 		throw new Error('useUser must be used within a UserProvider');
 	}
 	return context;
+}
+
+// Helper function to map string tier to enum
+function mapTierToEnum(tier: string): SubscriptionTier {
+	switch (tier?.toLowerCase()) {
+		case 'student':
+			return SubscriptionTier.STUDENT;
+		case 'scholar':
+			return SubscriptionTier.SCHOLAR;
+		case 'historian':
+			return SubscriptionTier.HISTORIAN;
+		default:
+			return SubscriptionTier.STUDENT;
+	}
+}
+
+// Helper function to convert enum to string
+function getTierString(tier: SubscriptionTier): string {
+	switch (tier) {
+		case SubscriptionTier.STUDENT:
+			return 'student';
+		case SubscriptionTier.SCHOLAR:
+			return 'scholar';
+		case SubscriptionTier.HISTORIAN:
+			return 'historian';
+		default:
+			return 'student';
+	}
 }

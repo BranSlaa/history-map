@@ -61,26 +61,49 @@ export function AuthProvider({
 			if (profileError) {
 				console.error('Error fetching profile:', profileError);
 
+				// Generate a username from email or user ID
+				const username =
+					sessionUser.email?.split('@')[0] ||
+					`user_${sessionUser.id.substring(0, 8)}`;
+
 				// Profile doesn't exist - this could be a new user
 				// Create a new profile for the user
-				const { data: newProfileData, error: createProfileError } =
-					await supabase
-						.from('profiles')
-						.insert([
-							{
-								id: sessionUser.id,
-								username:
-									sessionUser.email?.split('@')[0] ||
-									`user_${sessionUser.id}`,
-								full_name:
-									sessionUser.user_metadata?.full_name || '',
-								avatar_url:
-									sessionUser.user_metadata?.avatar_url || '',
-								subscription_tier: SubscriptionTier.STUDENT,
-							},
-						])
-						.select('*')
-						.single();
+				let newProfileData: any;
+				let createProfileError: any;
+
+				// Always use the API endpoint for profile creation
+				try {
+					const response = await fetch('/api/profile', {
+						method: 'POST',
+						headers: {
+							'Content-Type': 'application/json',
+						},
+						body: JSON.stringify({
+							id: sessionUser.id,
+							username: username,
+							avatar_url:
+								sessionUser.user_metadata?.avatar_url || '',
+							tier: 'student',
+						}),
+					});
+
+					const result = await response.json();
+
+					if (!response.ok) {
+						createProfileError = {
+							message: result.error || 'Unknown error',
+						};
+					} else {
+						newProfileData = result.data;
+					}
+				} catch (error) {
+					createProfileError = {
+						message:
+							error instanceof Error
+								? error.message
+								: 'Failed to create profile',
+					};
+				}
 
 				if (createProfileError) {
 					console.error(
@@ -92,40 +115,52 @@ export function AuthProvider({
 					throw new Error('Failed to create profile');
 				}
 
+				// Create an enhanced profile for the UI
+				const enhancedProfile = {
+					...newProfileData,
+					subscription_tier: mapTierToEnum(newProfileData.tier),
+				};
+
 				// Set the new profile
-				setProfile(newProfileData as Profile);
+				setProfile(enhancedProfile as Profile);
 
 				// Create a user object from the profile data
 				const constructedUser: User = {
 					id: sessionUser.id,
-					profile_id: newProfileData.id,
 					email: sessionUser.email,
-					full_name:
-						sessionUser.user_metadata?.full_name ||
-						newProfileData.full_name,
+					profile_id: newProfileData.id,
+					full_name: sessionUser.user_metadata?.full_name || '',
 					avatar_url:
 						sessionUser.user_metadata?.avatar_url ||
-						newProfileData.avatar_url,
-					profile: newProfileData as Profile,
+						newProfileData.avatar_url ||
+						'',
+					profile: enhancedProfile as Profile,
 				};
+
 				setUser(constructedUser);
 			} else {
-				// Successfully retrieved profile
-				setProfile(profileData as Profile);
+				// Create an enhanced profile for the UI
+				const enhancedProfile = {
+					...profileData,
+					subscription_tier: mapTierToEnum(profileData.tier),
+				};
+
+				// Set the profile
+				setProfile(enhancedProfile as Profile);
 
 				// Construct user from auth user and profile data
 				const constructedUser: User = {
 					id: sessionUser.id,
-					profile_id: profileData.id,
 					email: sessionUser.email,
-					full_name:
-						sessionUser.user_metadata?.full_name ||
-						profileData.full_name,
+					profile_id: profileData.id,
+					full_name: sessionUser.user_metadata?.full_name || '',
 					avatar_url:
 						sessionUser.user_metadata?.avatar_url ||
-						profileData.avatar_url,
-					profile: profileData as Profile,
+						profileData.avatar_url ||
+						'',
+					profile: enhancedProfile as Profile,
 				};
+
 				setUser(constructedUser);
 			}
 		} catch (err) {
@@ -207,23 +242,47 @@ export function AuthProvider({
 		try {
 			if (!profile || !authUser) throw new Error('No user logged in');
 
+			// Transform the profile data to match the database schema
+			const dbProfileData: any = { ...profileData };
+
+			// No need to handle full_name -> first_name/last_name conversion
+			// Remove full_name as it doesn't exist in DB
+			if (dbProfileData.full_name) {
+				delete dbProfileData.full_name;
+			}
+
+			// Handle subscription_tier -> tier conversion
+			if (profileData.subscription_tier !== undefined) {
+				dbProfileData.tier = getTierString(
+					profileData.subscription_tier,
+				);
+				delete dbProfileData.subscription_tier; // Remove subscription_tier as it doesn't exist in DB
+			}
+
+			// Update the record in the database
 			const { data, error } = await supabase
 				.from('profiles')
-				.update(profileData)
+				.update(dbProfileData)
 				.eq('id', profile.id)
 				.select('*')
 				.single();
 
 			if (error) throw error;
-			setProfile(data as Profile);
+
+			// Convert database record back to application model format
+			const enhancedProfile = {
+				...data,
+				subscription_tier: mapTierToEnum(data.tier),
+			};
+
+			setProfile(enhancedProfile as Profile);
 
 			// Update the user object with the new profile data
 			if (user) {
 				const updatedUser: User = {
 					...user,
-					full_name: data.full_name || user.full_name,
 					avatar_url: data.avatar_url || user.avatar_url,
-					profile: data as Profile,
+					profile: enhancedProfile as Profile,
 				};
 				setUser(updatedUser);
 			}
@@ -238,6 +297,20 @@ export function AuthProvider({
 			setIsLoading(false);
 		}
 	};
+
+	// Helper function to convert enum to string
+	function getTierString(tier: SubscriptionTier): string {
+		switch (tier) {
+			case SubscriptionTier.STUDENT:
+				return 'student';
+			case SubscriptionTier.SCHOLAR:
+				return 'scholar';
+			case SubscriptionTier.HISTORIAN:
+				return 'historian';
+			default:
+				return 'student';
+		}
+	}
 
 	const signOut = async () => {
 		// Clear all state
@@ -273,3 +346,16 @@ export const useAuth = (): AuthContextType => {
 	}
 	return context;
 };
+
+function mapTierToEnum(tier: string): SubscriptionTier {
+	switch (tier?.toLowerCase()) {
+		case 'student':
+			return SubscriptionTier.STUDENT;
+		case 'scholar':
+			return SubscriptionTier.SCHOLAR;
+		case 'historian':
+			return SubscriptionTier.HISTORIAN;
+		default:
+			return SubscriptionTier.STUDENT;
+	}
+}

@@ -9,9 +9,9 @@ module.exports = {
 	theme: {
 		extend: {
 			fontFamily: {
-				sans: ['var(--font-geist-sans)'],
-				mono: ['var(--font-geist-mono)'],
-				serif: ['Georgia', 'serif'],
+				sans: ["Times New Roman", 'Georgia', 'serif'],
+				mono: ['Courier New', 'monospace'],
+				serif: ["Times New Roman", 'Georgia', 'serif'],
 			},
 			colors: {
 				amber: {

@@ -4,12 +4,12 @@ import { cookies } from 'next/headers';
 import { createClient } from '@supabase/supabase-js';
 
 // Create a Supabase service role client with admin privileges
-const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
+const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const supabaseAdmin = serviceRoleKey
     ? createClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL || '',
         serviceRoleKey
-      )
+    )
     : null;
 
 export async function POST(request: NextRequest) {

@@ -8,39 +8,16 @@ export interface Event {
 	info: string;
 	key_terms?: string[];
 	embedding?: number[];
-	interacted?: boolean;
-}
-
-// Add interfaces for path tracking
-export interface PathData {
-	chosenEvents: string[];
-	unchosenEvents: string[];
-}
-
-export interface UserPath {
-	id?: number;
-	user_id: string;
-	path_data: PathData;
-	current_event_id?: string | null;
-	created_at?: string;
-	updated_at?: string;
+	path_ids?: string[];
+	quiz_ids?: string[];
 }
 
 export interface UserEventInteraction {
-	id?: number;
+	id?: string;
 	user_id: string;
 	event_id: string;
-	previous_event_id?: string | null;
-	next_event_id?: string | null;
-	interaction_type: 'fetch_more';
+	path_id: string;
+	interaction_type: 'explore' | 'quiz_answer' | 'favorite';
 	created_at?: string;
-}
-
-export interface UserEventConnection {
-	id?: number;
-	user_id: string;
-	source_event_id: string;
-	target_event_id: string;
-	connection_strength: number;
-	created_at?: string;
+	metadata?: Record<string, any>;
 }
