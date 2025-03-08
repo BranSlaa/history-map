@@ -428,6 +428,9 @@ const App = () => {
 
 	// Fix the useEffect for initialization to avoid double calls
 	useEffect(() => {
+		// Set initializing to true at the start of mount
+		setIsInitializing(true);
+
 		if (user && isFirstMount.current) {
 			console.log(
 				`[${mountId.current}] Initializing with user:`,
@@ -465,18 +468,18 @@ const App = () => {
 					// Even on error, we should mark initialization as complete
 					setIsInitializing(false);
 				});
-		} else if (!user && !isInitializing) {
-			// If no user and not initializing, we're ready
+		} else if (!user) {
 			setIsInitializing(false);
 		}
-	}, [
-		user,
-		fetchLastEvent,
-		fetchUserPathData,
-		mountId,
-		isFirstMount,
-		isInitializing,
-	]);
+
+		// Cleanup function - ensure we reset the loading state when unmounting
+		return () => {
+			setIsInitializing(false);
+			console.log(
+				`[${mountId.current}] Component unmounted, reset loading state`,
+			);
+		};
+	}, [user, fetchLastEvent, fetchUserPathData, mountId, isFirstMount]);
 
 	// Replace this effect with a more efficient version that only runs when dependencies actually change
 	useEffect(() => {
