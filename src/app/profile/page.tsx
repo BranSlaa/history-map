@@ -223,6 +223,7 @@ const Profile: React.FC = () => {
 											src={avatarUrl}
 											alt="User avatar"
 											fill
+											sizes="5rem"
 											className="object-cover"
 										/>
 									) : (

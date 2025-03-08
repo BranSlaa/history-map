@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
-import { UserPath, PathData } from '@/types/event';
+import { Path, PathData } from '@/types/path';
 
 // Initialize Supabase client
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
 		// Retrieve path data for the user
 		const { data, error } = await supabase
-			.from('user_paths')
+			.from('paths')
 			.select('*')
 			.eq('user_id', userId)
 			.order('updated_at', { ascending: false })
@@ -34,10 +34,10 @@ export async function GET(req: NextRequest) {
 			.single();
 
 		if (error) {
-			// If no path exists yet, return an empty path
 			if (error.code === 'PGRST116') {
 				return NextResponse.json({
-					pathData: { chosenEvents: [], unchosenEvents: [] },
+					path: null,
+					message: "No paths found for this user"
 				});
 			}
 
@@ -48,7 +48,9 @@ export async function GET(req: NextRequest) {
 			);
 		}
 
-		return NextResponse.json(data);
+		return NextResponse.json({
+			path: data,
+		});
 	} catch (error) {
 		console.error('Error in GET handler:', error);
 		return NextResponse.json(
@@ -62,7 +64,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
 	try {
 		const body = await req.json();
-		const { userId, pathData, currentEventId } = body;
+		const { userId, pathData, currentEventId, title = "My Path", subject = "History" } = body;
 
 		if (!userId || !pathData) {
 			return NextResponse.json(
@@ -73,7 +75,7 @@ export async function POST(req: NextRequest) {
 
 		// Check if a path already exists for this user
 		const { data: existingPath, error: fetchError } = await supabase
-			.from('user_paths')
+			.from('paths')
 			.select('id')
 			.eq('user_id', userId)
 			.order('updated_at', { ascending: false })
@@ -91,11 +93,9 @@ export async function POST(req: NextRequest) {
 		let result;
 
 		if (existingPath) {
-			// Update existing path
 			result = await supabase
-				.from('user_paths')
+				.from('paths')
 				.update({
-					path_data: pathData,
 					current_event_id: currentEventId || null,
 					updated_at: new Date().toISOString(),
 				})
@@ -103,13 +103,14 @@ export async function POST(req: NextRequest) {
 				.select()
 				.single();
 		} else {
-			// Create new path
 			result = await supabase
-				.from('user_paths')
+				.from('paths')
 				.insert({
 					user_id: userId,
-					path_data: pathData,
+					title,
+					subject,
 					current_event_id: currentEventId || null,
+					status: 'active',
 				})
 				.select()
 				.single();

@@ -180,7 +180,7 @@ const ProfileQuizzes: React.FC = () => {
 
 		try {
 			const { data: pathsData, error } = await supabase
-				.from('user_paths')
+				.from('paths')
 				.select('*')
 				.eq('user_id', user.id)
 				.order('updated_at', { ascending: false });
@@ -209,23 +209,6 @@ const ProfileQuizzes: React.FC = () => {
 		const fetchUserQuizzes = async () => {
 			try {
 				console.log('Fetching quizzes with user ID:', user.id);
-
-				// Also fetch event count
-				try {
-					const { data: interactions, error } = await supabase
-						.from('user_event_interactions')
-						.select('event_id');
-
-					if (!error && interactions) {
-						// Count unique events
-						const uniqueEvents = new Set(
-							interactions.map(i => i.event_id),
-						);
-						setEventCount(uniqueEvents.size);
-					}
-				} catch (err) {
-					console.error('Error fetching event count:', err);
-				}
 
 				// Fetch quizzes
 				const { data: quizzesData, error: quizzesError } =
