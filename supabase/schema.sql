@@ -1,5 +1,44 @@
+-- Complete database schema - drops everything and rebuilds from scratch
+
+-- Disable triggers temporarily to avoid foreign key violations during drops
+SET session_replication_role = 'replica';
+
+-- First drop any triggers that depend on functions we'll be dropping
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
+-- Drop all public schema tables in the correct order to avoid dependency issues
+DROP TABLE IF EXISTS public.quiz_answers CASCADE;
+DROP TABLE IF EXISTS public.quiz_options CASCADE;
+DROP TABLE IF EXISTS public.quiz_attempts CASCADE;
+DROP TABLE IF EXISTS public.quiz_questions CASCADE;
+DROP TABLE IF EXISTS public.quiz_related_events CASCADE;
+DROP TABLE IF EXISTS public.quizzes CASCADE;
+DROP TABLE IF EXISTS public.path_event_connections CASCADE;
+DROP TABLE IF EXISTS public.path_events CASCADE;
+DROP TABLE IF EXISTS public.paths CASCADE;
+DROP TABLE IF EXISTS public.user_paths CASCADE;
+DROP TABLE IF EXISTS public.historical_paths CASCADE;
+DROP TABLE IF EXISTS public.user_event_interactions CASCADE;
+DROP TABLE IF EXISTS public.event_connections CASCADE;
+DROP TABLE IF EXISTS public.user_activity_metrics CASCADE;
+DROP TABLE IF EXISTS public.event_key_terms CASCADE;
+DROP TABLE IF EXISTS public.key_terms CASCADE;
+DROP TABLE IF EXISTS public.search_terms CASCADE;
+DROP TABLE IF EXISTS public.events CASCADE;
+DROP TABLE IF EXISTS public.profiles CASCADE;
+
+-- Drop all functions that we'll be recreating
+DROP FUNCTION IF EXISTS public.handle_new_user();
+DROP FUNCTION IF EXISTS match_events(VECTOR(1536), FLOAT, INT);
+DROP FUNCTION IF EXISTS track_search_term(TEXT, BOOLEAN);
+
+-- Re-enable triggers
+SET session_replication_role = 'origin';
+
 -- Enable necessary extensions
 CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- =======================================================
 -- USER PROFILE TABLES
@@ -13,7 +52,11 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     username TEXT,
     subscription_tier SMALLINT NOT NULL DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    last_sign_in_at TIMESTAMP WITH TIME ZONE
+    last_sign_in_at TIMESTAMP WITH TIME ZONE,
+    search_count INTEGER DEFAULT 0,
+    connection_count INTEGER DEFAULT 0,
+    last_search_at TIMESTAMP WITH TIME ZONE,
+    last_connection_at TIMESTAMP WITH TIME ZONE
 );
 
 -- Enable RLS on profiles
@@ -72,7 +115,7 @@ CREATE TABLE IF NOT EXISTS public.events (
     lat FLOAT NOT NULL,
     lon FLOAT NOT NULL,
     subject TEXT NOT NULL,
-    info TEXT NOT NULL,
+    description TEXT NOT NULL,
     embedding VECTOR(1536),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -107,18 +150,6 @@ CREATE POLICY "Key terms are viewable by everyone"
     ON key_terms FOR SELECT 
     USING (true);
 
--- Only authenticated users can modify key terms
-DROP POLICY IF EXISTS "Only authenticated users can insert key terms" ON key_terms;
-CREATE POLICY "Only authenticated users can insert key terms" 
-    ON key_terms FOR INSERT 
-    WITH CHECK (auth.role() = 'authenticated');
-
--- Service role has full access to key_terms
-DROP POLICY IF EXISTS "Service role has full access to key terms" ON key_terms;
-CREATE POLICY "Service role has full access to key terms"
-    ON key_terms FOR ALL
-    USING (current_setting('role') = 'service_role');
-
 -- Create event_key_terms junction table
 CREATE TABLE IF NOT EXISTS public.event_key_terms (
     event_id TEXT REFERENCES public.events(id) ON DELETE CASCADE,
@@ -135,56 +166,6 @@ CREATE POLICY "Event key terms are viewable by everyone"
     ON event_key_terms FOR SELECT 
     USING (true);
 
--- Only authenticated users can modify event key terms
-DROP POLICY IF EXISTS "Only authenticated users can insert event key terms" ON event_key_terms;
-CREATE POLICY "Only authenticated users can insert event key terms" 
-    ON event_key_terms FOR INSERT 
-    WITH CHECK (auth.role() = 'authenticated');
-
--- Service role has full access to event_key_terms
-DROP POLICY IF EXISTS "Service role has full access to event key terms" ON event_key_terms;
-CREATE POLICY "Service role has full access to event key terms"
-    ON event_key_terms FOR ALL
-    USING (current_setting('role') = 'service_role');
-
--- Create event_connections table
-CREATE TABLE IF NOT EXISTS public.event_connections (
-    id SERIAL PRIMARY KEY,
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    source_event_id TEXT REFERENCES public.events(id) ON DELETE CASCADE,
-    target_event_id TEXT REFERENCES public.events(id) ON DELETE CASCADE,
-    connection_strength INTEGER NOT NULL DEFAULT 1,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    UNIQUE(user_id, source_event_id, target_event_id)
-);
-
--- Enable RLS on event_connections
-ALTER TABLE IF EXISTS event_connections ENABLE ROW LEVEL SECURITY;
-
--- Users can view their own event connections
-DROP POLICY IF EXISTS "Users can view their own event connections" ON event_connections;
-CREATE POLICY "Users can view their own event connections" 
-    ON event_connections FOR SELECT 
-    USING (auth.uid() = user_id);
-
--- Users can insert their own event connections
-DROP POLICY IF EXISTS "Users can insert their own event connections" ON event_connections;
-CREATE POLICY "Users can insert their own event connections" 
-    ON event_connections FOR INSERT 
-    WITH CHECK (auth.uid() = user_id);
-
--- Users can update their own event connections
-DROP POLICY IF EXISTS "Users can update their own event connections" ON event_connections;
-CREATE POLICY "Users can update their own event connections" 
-    ON event_connections FOR UPDATE 
-    USING (auth.uid() = user_id);
-
--- Service role has full access to event_connections
-DROP POLICY IF EXISTS "Service role has full access to event connections" ON event_connections;
-CREATE POLICY "Service role has full access to event connections" 
-    ON event_connections FOR ALL 
-    USING (current_setting('role') = 'service_role');
-
 -- =======================================================
 -- SEARCH AND VECTOR SEARCH
 -- =======================================================
@@ -194,6 +175,7 @@ CREATE TABLE IF NOT EXISTS public.search_terms (
     term TEXT PRIMARY KEY,
     search_count INTEGER NOT NULL DEFAULT 0,
     success_count INTEGER NOT NULL DEFAULT 0,
+    first_searched TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_searched TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
@@ -221,7 +203,7 @@ RETURNS TABLE (
     lat FLOAT,
     lon FLOAT,
     subject TEXT,
-    info TEXT,
+    description TEXT,
     similarity FLOAT
 )
 LANGUAGE plpgsql
@@ -237,7 +219,7 @@ BEGIN
         events.lat,
         events.lon,
         events.subject,
-        events.info,
+        events.description,
         1 - (events.embedding <=> query_embedding) AS similarity
     FROM events
     WHERE 1 - (events.embedding <=> query_embedding) > match_threshold
@@ -254,35 +236,27 @@ SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
-    INSERT INTO search_terms (term, search_count, success_count)
-    VALUES (p_term, 1, CASE WHEN p_had_results THEN 1 ELSE 0 END)
-    ON CONFLICT (term)
-    DO UPDATE SET
+    INSERT INTO search_terms (term, search_count, success_count, first_searched, last_searched)
+    VALUES (p_term, 1, CASE WHEN p_had_results THEN 1 ELSE 0 END, NOW(), NOW())
+    ON CONFLICT (term) 
+    DO UPDATE SET 
         search_count = search_terms.search_count + 1,
         success_count = search_terms.success_count + CASE WHEN p_had_results THEN 1 ELSE 0 END,
         last_searched = NOW();
 END;
 $$;
 
--- Create view for popular search terms (without SECURITY DEFINER)
-DROP VIEW IF EXISTS popular_search_terms;
-CREATE VIEW popular_search_terms AS
-SELECT term, search_count, success_count
-FROM search_terms
-ORDER BY search_count DESC;
-
 -- =======================================================
--- PATHS AND USER EVENT INTERACTIONS
+-- PATHS AND USER INTERACTIONS
 -- =======================================================
 
--- Create new paths table to replace user_paths
-DROP TABLE IF EXISTS public.paths CASCADE;
+-- Create paths table
 CREATE TABLE IF NOT EXISTS public.paths (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    search_term TEXT NOT NULL,
-    subject TEXT NOT NULL DEFAULT 'History',
     title TEXT NOT NULL,
+    search_term TEXT,
+    subject TEXT NOT NULL DEFAULT 'History',
     started_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     completed_at TIMESTAMP WITH TIME ZONE,
@@ -317,7 +291,6 @@ CREATE POLICY "Service role has full access to paths"
     ON paths FOR ALL
     USING (current_setting('role') = 'service_role');
 
-DROP TABLE IF EXISTS public.path_events CASCADE;
 -- Create path_events table to track events in a path
 CREATE TABLE IF NOT EXISTS public.path_events (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -326,6 +299,8 @@ CREATE TABLE IF NOT EXISTS public.path_events (
     title TEXT NOT NULL,
     explored_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     event_order INTEGER NOT NULL,
+    quiz_generated BOOLEAN DEFAULT FALSE,
+    exploration_time INTEGER, -- time spent in seconds
     UNIQUE(path_id, event_id)
 );
 
@@ -343,293 +318,212 @@ CREATE POLICY "Path events can be inserted by path owners"
     ON path_events FOR INSERT
     WITH CHECK (path_id IN (SELECT id FROM paths WHERE user_id = auth.uid()));
 
+DROP POLICY IF EXISTS "Path events can be updated by path owners" ON path_events;
+CREATE POLICY "Path events can be updated by path owners"
+    ON path_events FOR UPDATE
+    USING (path_id IN (SELECT id FROM paths WHERE user_id = auth.uid()));
+
 DROP POLICY IF EXISTS "Service role has full access to path events" ON path_events;
 CREATE POLICY "Service role has full access to path events"
     ON path_events FOR ALL
     USING (current_setting('role') = 'service_role');
 
--- Create path_event_connections table
-CREATE TABLE IF NOT EXISTS public.path_event_connections (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    path_id UUID NOT NULL REFERENCES paths(id) ON DELETE CASCADE,
-    source_event_id TEXT NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
-    target_event_id TEXT NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
-    connection_strength FLOAT NOT NULL DEFAULT 0.0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    UNIQUE(path_id, source_event_id, target_event_id)
-);
+-- =======================================================
+-- QUIZZES AND LEARNING
+-- =======================================================
 
--- Enable RLS on path_event_connections
-ALTER TABLE IF EXISTS public.path_event_connections ENABLE ROW LEVEL SECURITY;
-
--- Path event connections policies
-DROP POLICY IF EXISTS "Path event connections are viewable by path owners" ON path_event_connections;
-CREATE POLICY "Path event connections are viewable by path owners"
-    ON path_event_connections FOR SELECT
-    USING (path_id IN (SELECT id FROM paths WHERE user_id = auth.uid()));
-
-DROP POLICY IF EXISTS "Path event connections can be inserted by path owners" ON path_event_connections;
-CREATE POLICY "Path event connections can be inserted by path owners"
-    ON path_event_connections FOR INSERT
-    WITH CHECK (path_id IN (SELECT id FROM paths WHERE user_id = auth.uid()));
-
-DROP POLICY IF EXISTS "Service role has full access to path event connections" ON path_event_connections;
-CREATE POLICY "Service role has full access to path event connections"
-    ON path_event_connections FOR ALL
-    USING (current_setting('role') = 'service_role');
-
--- Update the user_event_interactions table
-CREATE TABLE IF NOT EXISTS public.user_event_interactions (
+-- Create quizzes table
+CREATE TABLE IF NOT EXISTS public.quizzes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    event_id TEXT NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
     path_id UUID REFERENCES paths(id) ON DELETE SET NULL,
-    interaction_type TEXT NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
-    metadata JSONB,
-    CONSTRAINT valid_interaction_type CHECK (interaction_type IN ('explore', 'quiz_answer', 'favorite'))
-);
-
--- Enable RLS on user_event_interactions
-ALTER TABLE IF EXISTS public.user_event_interactions ENABLE ROW LEVEL SECURITY;
-
--- User event interactions policies
-DROP POLICY IF EXISTS "Users can view their own event interactions" ON user_event_interactions;
-CREATE POLICY "Users can view their own event interactions"
-    ON user_event_interactions FOR SELECT
-    USING (user_id = auth.uid());
-
-DROP POLICY IF EXISTS "Users can insert their own event interactions" ON user_event_interactions;
-CREATE POLICY "Users can insert their own event interactions"
-    ON user_event_interactions FOR INSERT
-    WITH CHECK (user_id = auth.uid());
-
-DROP POLICY IF EXISTS "Service role has full access to user interactions" ON user_event_interactions;
-CREATE POLICY "Service role has full access to user interactions"
-    ON user_event_interactions FOR ALL
-    USING (current_setting('role') = 'service_role');
-
--- =======================================================
--- QUIZ SYSTEM
--- =======================================================
-
--- Drop all quiz-related tables to ensure proper recreation order
-DROP TABLE IF EXISTS public.quiz_answers CASCADE;
-DROP TABLE IF EXISTS public.quiz_attempts CASCADE;
-DROP TABLE IF EXISTS public.quiz_options CASCADE;
-DROP TABLE IF EXISTS public.quiz_questions CASCADE;
-DROP TABLE IF EXISTS public.quiz_related_events CASCADE;
-DROP TABLE IF EXISTS public.quizzes CASCADE;
-
--- Create quizzes table with path relationship
-CREATE TABLE IF NOT EXISTS public.quizzes (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     title TEXT NOT NULL,
-    description TEXT NOT NULL,
-    difficulty TEXT NOT NULL CHECK (difficulty IN ('beginner', 'intermediate', 'advanced')),
-    subject TEXT NOT NULL,
-    topic TEXT NOT NULL,
-    question_count INTEGER NOT NULL,
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    path_id UUID REFERENCES paths(id) ON DELETE SET NULL,
-    search_term TEXT,
-    related_event_ids TEXT[],
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
+    difficulty SMALLINT DEFAULT 1,
+    status TEXT DEFAULT 'active',
+    CONSTRAINT valid_status CHECK (status IN ('active', 'completed', 'archived'))
 );
 
--- Create questions table
+-- Enable RLS on quizzes
+ALTER TABLE IF EXISTS public.quizzes ENABLE ROW LEVEL SECURITY;
+
+-- Create quiz_questions table
 CREATE TABLE IF NOT EXISTS public.quiz_questions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    quiz_id UUID REFERENCES public.quizzes(id) ON DELETE CASCADE,
-    question_text TEXT NOT NULL,
-    explanation TEXT,
-    difficulty TEXT NOT NULL CHECK (difficulty IN ('beginner', 'intermediate', 'advanced')),
-    points INTEGER NOT NULL DEFAULT 1,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    question TEXT NOT NULL,
+    question_order INTEGER NOT NULL,
+    question_type TEXT NOT NULL DEFAULT 'multiple_choice'
 );
 
--- Create question options table
+-- Enable RLS on quiz_questions
+ALTER TABLE IF EXISTS public.quiz_questions ENABLE ROW LEVEL SECURITY;
+
+-- Create quiz_options table
 CREATE TABLE IF NOT EXISTS public.quiz_options (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    quiz_question_id UUID REFERENCES public.quiz_questions(id) ON DELETE CASCADE,
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quiz_question_id UUID NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
     option_text TEXT NOT NULL,
     is_correct BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    option_order INTEGER NOT NULL
 );
 
--- Create quiz attempts table
+-- Enable RLS on quiz_options
+ALTER TABLE IF EXISTS public.quiz_options ENABLE ROW LEVEL SECURITY;
+
+-- Create quiz_attempts table
 CREATE TABLE IF NOT EXISTS public.quiz_attempts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    quiz_id UUID REFERENCES public.quizzes(id) ON DELETE CASCADE,
-    score NUMERIC NOT NULL DEFAULT 0,
-    completed BOOLEAN NOT NULL DEFAULT FALSE,
-    started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT now(),
     completed_at TIMESTAMP WITH TIME ZONE,
-    generated_after_searches INTEGER NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    score INTEGER,
+    max_score INTEGER,
+    time_taken INTEGER  -- seconds
 );
 
--- Create quiz answers table
+-- Enable RLS on quiz_attempts
+ALTER TABLE IF EXISTS public.quiz_attempts ENABLE ROW LEVEL SECURITY;
+
+-- Create quiz_answers table
 CREATE TABLE IF NOT EXISTS public.quiz_answers (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    attempt_id UUID REFERENCES public.quiz_attempts(id) ON DELETE CASCADE,
-    quiz_question_id UUID REFERENCES public.quiz_questions(id) ON DELETE CASCADE,
-    selected_option_id UUID REFERENCES public.quiz_options(id) ON DELETE CASCADE,
-    is_correct BOOLEAN NOT NULL DEFAULT FALSE,
-    points_earned NUMERIC NOT NULL DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    attempt_id UUID NOT NULL REFERENCES quiz_attempts(id) ON DELETE CASCADE,
+    quiz_question_id UUID NOT NULL REFERENCES quiz_questions(id) ON DELETE CASCADE,
+    selected_option_id UUID REFERENCES quiz_options(id) ON DELETE CASCADE,
+    is_correct BOOLEAN,
+    answered_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
--- Create quiz related events junction table
+-- Enable RLS on quiz_answers
+ALTER TABLE IF EXISTS public.quiz_answers ENABLE ROW LEVEL SECURITY;
+
+-- Create quiz_related_events table
 CREATE TABLE IF NOT EXISTS public.quiz_related_events (
-    quiz_id UUID REFERENCES public.quizzes(id) ON DELETE CASCADE,
-    event_id TEXT REFERENCES public.events(id) ON DELETE CASCADE,
-    event_metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    PRIMARY KEY (quiz_id, event_id)
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    quiz_id UUID NOT NULL REFERENCES quizzes(id) ON DELETE CASCADE,
+    event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    relevance_score FLOAT DEFAULT 1.0,
+    UNIQUE(quiz_id, event_id)
 );
 
--- Create table to track user search/connection count
-CREATE TABLE IF NOT EXISTS public.user_activity_metrics (
-    user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE PRIMARY KEY,
-    search_count INTEGER NOT NULL DEFAULT 0,
-    connection_count INTEGER NOT NULL DEFAULT 0, 
-    quiz_trigger_count INTEGER NOT NULL DEFAULT 0,
-    last_search_at TIMESTAMP WITH TIME ZONE,
-    last_quiz_at TIMESTAMP WITH TIME ZONE,
-    last_connection_at TIMESTAMP WITH TIME ZONE,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Enable RLS on quiz_related_events
+ALTER TABLE IF EXISTS public.quiz_related_events ENABLE ROW LEVEL SECURITY;
 
--- Setup RLS policies for quiz tables
-ALTER TABLE IF EXISTS quizzes ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS quiz_questions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS quiz_options ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS quiz_attempts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS quiz_answers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS quiz_related_events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE IF EXISTS user_activity_metrics ENABLE ROW LEVEL SECURITY;
+-- =======================================================
+-- SECURITY POLICIES FOR QUIZ TABLES
+-- =======================================================
 
--- Everyone can view quizzes
-DROP POLICY IF EXISTS "Quizzes are viewable by everyone" ON quizzes;
-CREATE POLICY "Quizzes are viewable by everyone" 
-    ON quizzes FOR SELECT 
-    USING (true);
+-- Quizzes policies
+DROP POLICY IF EXISTS "Quizzes are viewable by creators" ON quizzes;
+CREATE POLICY "Quizzes are viewable by creators"
+    ON quizzes FOR SELECT
+    USING (user_id = auth.uid());
 
--- Service role has full access to quizzes
+DROP POLICY IF EXISTS "Quizzes can be inserted by owners" ON quizzes;
+CREATE POLICY "Quizzes can be inserted by owners"
+    ON quizzes FOR INSERT
+    WITH CHECK (user_id = auth.uid());
+
 DROP POLICY IF EXISTS "Service role has full access to quizzes" ON quizzes;
 CREATE POLICY "Service role has full access to quizzes"
     ON quizzes FOR ALL
     USING (current_setting('role') = 'service_role');
 
--- Everyone can view quiz questions
-DROP POLICY IF EXISTS "Quiz questions are viewable by everyone" ON quiz_questions;
-CREATE POLICY "Quiz questions are viewable by everyone" 
-    ON quiz_questions FOR SELECT 
-    USING (true);
+-- Quiz questions policies
+DROP POLICY IF EXISTS "Quiz questions are viewable by quiz owners" ON quiz_questions;
+CREATE POLICY "Quiz questions are viewable by quiz owners"
+    ON quiz_questions FOR SELECT
+    USING (quiz_id IN (SELECT id FROM quizzes WHERE user_id = auth.uid()));
 
--- Service role has full access to quiz_questions
 DROP POLICY IF EXISTS "Service role has full access to quiz questions" ON quiz_questions;
 CREATE POLICY "Service role has full access to quiz questions"
     ON quiz_questions FOR ALL
     USING (current_setting('role') = 'service_role');
 
--- Everyone can view quiz options
-DROP POLICY IF EXISTS "Quiz options are viewable by everyone" ON quiz_options;
-CREATE POLICY "Quiz options are viewable by everyone" 
-    ON quiz_options FOR SELECT 
-    USING (true);
+-- Quiz options policies
+DROP POLICY IF EXISTS "Quiz options are viewable by question owners" ON quiz_options;
+CREATE POLICY "Quiz options are viewable by question owners"
+    ON quiz_options FOR SELECT
+    USING (quiz_question_id IN (SELECT id FROM quiz_questions WHERE quiz_id IN 
+          (SELECT id FROM quizzes WHERE user_id = auth.uid())));
 
--- Service role has full access to quiz_options
 DROP POLICY IF EXISTS "Service role has full access to quiz options" ON quiz_options;
 CREATE POLICY "Service role has full access to quiz options"
     ON quiz_options FOR ALL
     USING (current_setting('role') = 'service_role');
 
--- Users can view their own quiz attempts
-DROP POLICY IF EXISTS "Users can view their own quiz attempts" ON quiz_attempts;
-CREATE POLICY "Users can view their own quiz attempts" 
-    ON quiz_attempts FOR SELECT 
-    USING (auth.uid() = user_id);
+-- Quiz attempts policies
+DROP POLICY IF EXISTS "Quiz attempts are viewable by owners" ON quiz_attempts;
+CREATE POLICY "Quiz attempts are viewable by owners"
+    ON quiz_attempts FOR SELECT
+    USING (user_id = auth.uid());
 
--- Users can insert their own quiz attempts
-DROP POLICY IF EXISTS "Users can insert their own quiz attempts" ON quiz_attempts;
-CREATE POLICY "Users can insert their own quiz attempts" 
-    ON quiz_attempts FOR INSERT 
-    WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Quiz attempts can be inserted by owners" ON quiz_attempts;
+CREATE POLICY "Quiz attempts can be inserted by owners"
+    ON quiz_attempts FOR INSERT
+    WITH CHECK (user_id = auth.uid());
 
--- Service role has full access to quiz_attempts
+DROP POLICY IF EXISTS "Quiz attempts can be updated by owners" ON quiz_attempts;
+CREATE POLICY "Quiz attempts can be updated by owners"
+    ON quiz_attempts FOR UPDATE
+    USING (user_id = auth.uid());
+
 DROP POLICY IF EXISTS "Service role has full access to quiz attempts" ON quiz_attempts;
 CREATE POLICY "Service role has full access to quiz attempts"
     ON quiz_attempts FOR ALL
     USING (current_setting('role') = 'service_role');
 
--- Users can view their own quiz answers
-DROP POLICY IF EXISTS "Users can view their own quiz answers" ON quiz_answers;
-CREATE POLICY "Users can view their own quiz answers"
+-- Quiz answers policies
+DROP POLICY IF EXISTS "Quiz answers are viewable by attempt owners" ON quiz_answers;
+CREATE POLICY "Quiz answers are viewable by attempt owners"
     ON quiz_answers FOR SELECT
-    USING (auth.uid() = (SELECT user_id FROM quiz_attempts WHERE id = attempt_id));
+    USING (attempt_id IN (SELECT id FROM quiz_attempts WHERE user_id = auth.uid()));
 
--- Users can insert their own quiz answers
-DROP POLICY IF EXISTS "Users can insert their own quiz answers" ON quiz_answers;
-CREATE POLICY "Users can insert their own quiz answers"
+DROP POLICY IF EXISTS "Quiz answers can be inserted by attempt owners" ON quiz_answers;
+CREATE POLICY "Quiz answers can be inserted by attempt owners"
     ON quiz_answers FOR INSERT
-    WITH CHECK (auth.uid() = (SELECT user_id FROM quiz_attempts WHERE id = attempt_id));
+    WITH CHECK (attempt_id IN (SELECT id FROM quiz_attempts WHERE user_id = auth.uid()));
 
--- Service role has full access to quiz_answers
 DROP POLICY IF EXISTS "Service role has full access to quiz answers" ON quiz_answers;
 CREATE POLICY "Service role has full access to quiz answers"
     ON quiz_answers FOR ALL
     USING (current_setting('role') = 'service_role');
 
--- Everyone can view quiz_related_events
-DROP POLICY IF EXISTS "Quiz related events are viewable by everyone" ON quiz_related_events;
-CREATE POLICY "Quiz related events are viewable by everyone"
+-- Quiz related events policies
+DROP POLICY IF EXISTS "Quiz related events are viewable by quiz owners" ON quiz_related_events;
+CREATE POLICY "Quiz related events are viewable by quiz owners"
     ON quiz_related_events FOR SELECT
-    USING (true);
+    USING (quiz_id IN (SELECT id FROM quizzes WHERE user_id = auth.uid()));
 
--- Service role has full access to quiz_related_events
 DROP POLICY IF EXISTS "Service role has full access to quiz related events" ON quiz_related_events;
 CREATE POLICY "Service role has full access to quiz related events"
     ON quiz_related_events FOR ALL
     USING (current_setting('role') = 'service_role');
 
--- Users can view their own activity metrics
-DROP POLICY IF EXISTS "Users can view their own activity metrics" ON user_activity_metrics;
-CREATE POLICY "Users can view their own activity metrics"
-    ON user_activity_metrics FOR SELECT
-    USING (auth.uid() = user_id);
+-- =======================================================
+-- INDICES AND OPTIMIZATIONS
+-- =======================================================
 
--- Users can insert their own activity metrics
-DROP POLICY IF EXISTS "Users can insert their own activity metrics" ON user_activity_metrics;
-CREATE POLICY "Users can insert their own activity metrics"
-    ON user_activity_metrics FOR INSERT
-    WITH CHECK (auth.uid() = user_id);
+-- Events indices
+CREATE INDEX IF NOT EXISTS idx_events_subject ON events(subject);
+CREATE INDEX IF NOT EXISTS idx_events_year ON events(year);
+CREATE INDEX IF NOT EXISTS idx_events_title ON events(title text_pattern_ops);
 
--- Users can update their own activity metrics
-DROP POLICY IF EXISTS "Users can update their own activity metrics" ON user_activity_metrics;
-CREATE POLICY "Users can update their own activity metrics"
-    ON user_activity_metrics FOR UPDATE
-    USING (auth.uid() = user_id);
-
--- Service role has full access to user_activity_metrics
-DROP POLICY IF EXISTS "Service role has full access to user activity metrics" ON user_activity_metrics;
-CREATE POLICY "Service role has full access to user activity metrics"
-    ON user_activity_metrics FOR ALL
-    USING (current_setting('role') = 'service_role');
-
--- Create indexes for performance after all tables are created
+-- Paths indices
 CREATE INDEX IF NOT EXISTS idx_paths_user_id ON paths(user_id);
 CREATE INDEX IF NOT EXISTS idx_paths_status ON paths(status);
+CREATE INDEX IF NOT EXISTS idx_paths_current_event_id ON paths(current_event_id);
+
+-- Path events indices
 CREATE INDEX IF NOT EXISTS idx_path_events_path_id ON path_events(path_id);
 CREATE INDEX IF NOT EXISTS idx_path_events_event_id ON path_events(event_id);
-CREATE INDEX IF NOT EXISTS idx_path_event_connections_path_id ON path_event_connections(path_id);
-CREATE INDEX IF NOT EXISTS idx_user_event_interactions_user_id ON user_event_interactions(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_event_interactions_event_id ON user_event_interactions(event_id);
-CREATE INDEX IF NOT EXISTS idx_user_event_interactions_path_id ON user_event_interactions(path_id);
+CREATE INDEX IF NOT EXISTS idx_path_events_event_order ON path_events(event_order);
+
+-- Quiz indices
 CREATE INDEX IF NOT EXISTS idx_quizzes_path_id ON quizzes(path_id);
 CREATE INDEX IF NOT EXISTS idx_quizzes_user_id ON quizzes(user_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_questions_quiz_id ON quiz_questions(quiz_id);
@@ -640,12 +534,3 @@ CREATE INDEX IF NOT EXISTS idx_quiz_answers_attempt_id ON quiz_answers(attempt_i
 CREATE INDEX IF NOT EXISTS idx_quiz_answers_question_id ON quiz_answers(quiz_question_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_related_events_quiz_id ON quiz_related_events(quiz_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_related_events_event_id ON quiz_related_events(event_id);
-
--- Add table comments
-COMMENT ON TABLE public.events IS 'Historical events with geographic coordinates and vector embeddings for semantic search';
-COMMENT ON TABLE public.paths IS 'User exploration paths through historical events';
-COMMENT ON TABLE public.path_events IS 'Events within user exploration paths';
-COMMENT ON TABLE public.quizzes IS 'History quizzes generated from user exploration paths';
-
--- After all quiz tables are created, now we can add the quiz_id to paths
-ALTER TABLE public.paths ADD COLUMN IF NOT EXISTS quiz_id UUID REFERENCES public.quizzes(id) ON DELETE SET NULL;

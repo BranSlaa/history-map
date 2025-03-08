@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import { Event } from '@/types/event';
 import 'leaflet/dist/leaflet.css';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
+import WelcomeBack from '@/app/components/WelcomeBack';
+import EventPanel from '@/app/components/EventPanel';
+import SubjectFilterBar from '@/app/components/SubjectFilterBar';
 
 // Extend Event interface if needed to include latitude and longitude
 declare module '@/types/event' {
@@ -79,16 +82,31 @@ interface MapComponentProps {
 export const MapComponent: React.FC<MapComponentProps> = ({
 	events,
 	handleEventSelection,
-	// Include other props here
-	// ...
+	handleFilterChange,
+	handleContinueExploration,
+	handleNewSearch,
+	handleFetchEvents,
+	handleShowWelcomeBack,
+	handleFetchLastEvent,
+	handleMapRef,
+	handleEvents,
+	handleCurrentEvents,
+	handleChosenEvents,
+	handleSelectedEvent,
+	handleTopic,
+	handleSetTopic,
+	handleIsPanelCollapsed,
+	handleSetIsPanelCollapsed,
+	handleIsShowingWelcomeBack,
+	handleLastEvent,
+	handleSetShowWelcomeBack,
 	handleIsMounted = false,
-	// ...
 }) => {
-	// Fix Leaflet icon paths
 	useEffect(() => {
-		// Fix Leaflet default icon issue
-		if (L.Icon.Default.prototype._getIconUrl) {
-			delete (L.Icon.Default.prototype as any)._getIconUrl;
+		// Fix Leaflet default icon issue with type assertion
+		const iconDefault = L.Icon.Default.prototype as any;
+		if (iconDefault._getIconUrl) {
+			delete iconDefault._getIconUrl;
 		}
 
 		L.Icon.Default.mergeOptions({
@@ -101,36 +119,105 @@ export const MapComponent: React.FC<MapComponentProps> = ({
 		});
 	}, []);
 
+	// Add safety check for current events
+	const safeCurrentEvents =
+		handleCurrentEvents?.filter(
+			event => event && typeof event.id === 'string',
+		) || [];
+
+	// Add safety check for chosen events
+	const safeChosenEvents =
+		handleChosenEvents?.filter(
+			event => event && typeof event.id === 'string',
+		) || [];
+
+	// Extract unique subjects from events
+	const uniqueSubjects = Array.from(
+		new Set(
+			(handleEvents || [])
+				.filter(event => event && event.subject)
+				.map(event => event.subject)
+				.filter(Boolean),
+		),
+	);
+
+	// Add safety check for events
+	const safeEvents =
+		events?.filter(
+			event =>
+				event &&
+				typeof event.id === 'string' &&
+				typeof event.latitude === 'number' &&
+				typeof event.longitude === 'number',
+		) || [];
+
 	return (
-		<MapContainer
-			center={[20, 0]}
-			zoom={2}
-			scrollWheelZoom={true}
-			style={{ height: '100%', width: '100%' }}
-			attributionControl={false}
-		>
-			<TileLayer
-				url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-				attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-			/>
-			{events.map(event => (
-				<Marker
-					key={event.id}
-					position={[event.latitude, event.longitude]}
-					eventHandlers={{
-						click: () => handleEventSelection(event),
-					}}
+		<div className="flex h-full">
+			{/* Sidebar Panel */}
+			<div
+				className={`transition-all duration-300 ${handleIsPanelCollapsed ? 'w-0 overflow-hidden' : 'w-96'} bg-white dark:bg-stone-800 h-full flex flex-col shadow-lg relative`}
+			>
+				{/* Toggle Panel Button - attached to the sidebar */}
+				<button
+					className="absolute z-10 -right-10 top-20 bg-amber-600 hover:bg-amber-700 text-white p-2 rounded-r-lg shadow-md"
+					onClick={() =>
+						handleSetIsPanelCollapsed(!handleIsPanelCollapsed)
+					}
 				>
-					<Popup>
-						<div>
-							<h3 className="font-semibold text-lg">
-								{event.title}
-							</h3>
-							<p>{event.year}</p>
-						</div>
-					</Popup>
-				</Marker>
-			))}
-		</MapContainer>
+					{handleIsPanelCollapsed ? '\u203A' : '\u2039'}
+				</button>
+
+				{/* Filter Bar */}
+				<SubjectFilterBar
+					subjects={uniqueSubjects}
+					onFilterChange={handleFilterChange}
+				/>
+
+				{/* Event Panel */}
+				<div className="flex-1 overflow-auto">
+					<EventPanel
+						events={safeCurrentEvents}
+						onSelectEvent={handleEventSelection}
+						selectedEvent={handleSelectedEvent}
+						chosenEvents={safeChosenEvents}
+					/>
+				</div>
+			</div>
+
+			{/* Map Container */}
+			<div className="flex-1 relative">
+				<MapContainer
+					center={[20, 0]}
+					zoom={2}
+					scrollWheelZoom={true}
+					style={{ height: '100%', width: '100%' }}
+					attributionControl={false}
+					ref={handleMapRef}
+				>
+					<TileLayer
+						url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+						attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+					/>
+					{safeEvents.map(event => (
+						<Marker
+							key={event.id}
+							position={[event.latitude, event.longitude]}
+							eventHandlers={{
+								click: () => handleEventSelection(event),
+							}}
+						>
+							<Popup>
+								<div>
+									<h3 className="font-semibold text-lg">
+										{event.title}
+									</h3>
+									<p>{event.year}</p>
+								</div>
+							</Popup>
+						</Marker>
+					))}
+				</MapContainer>
+			</div>
+		</div>
 	);
 };

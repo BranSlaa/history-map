@@ -61,6 +61,7 @@ export const trackUserActivity = async (
 			},
 			body: JSON.stringify({
 				activityType,
+				userId,
 			}),
 		});
 
@@ -75,6 +76,11 @@ export const trackUserActivity = async (
 		}
 
 		const data = await response.json();
+		
+		// For anonymous users or if no quiz should be triggered, just return the data
+		if (data.anonymous || !data.shouldTriggerQuiz) {
+			return data;
+		}
 		
 		// Check if a quiz should be triggered
 		if (data.shouldTriggerQuiz) {

@@ -35,9 +35,10 @@ export const createFetchLastEvent = (supabase: SupabaseClient) => {
 			
 			// Get path data from the database
 			const { data: pathData, error: pathError } = await supabase
-				.from('user_paths')
+				.from('paths')
 				.select('*')
 				.eq('user_id', userId)
+				.eq('status', 'active')
 				.order('updated_at', { ascending: false })
 				.limit(1);
 			
@@ -51,9 +52,8 @@ export const createFetchLastEvent = (supabase: SupabaseClient) => {
 				return null;
 			}
 			
-			// Check for currentEventId in different levels of the data structure
-			let currentEventId = pathData[0].currentEventId || 
-				(pathData[0].path_data && pathData[0].path_data.currentEventId);
+			// Check for currentEventId
+			const currentEventId = pathData[0].current_event_id;
 			
 			console.log(`[${mountId.current}] Current event ID:`, currentEventId);
 			
@@ -62,57 +62,29 @@ export const createFetchLastEvent = (supabase: SupabaseClient) => {
 				return null;
 			}
 			
-			// Ensure the event ID is in the correct format for UUID
-			// UUIDs should be exactly 36 characters in 8-4-4-4-12 format
-			if (currentEventId) {
-				// Remove any existing hyphens
-				const cleanId = currentEventId.replace(/-/g, '');
+			// Fetch the event from the database
+			try {
+				const { data, error } = await supabase
+					.from('events')
+					.select('*')
+					.eq('id', currentEventId);
 				
-				// If it's too long, truncate it to correct length (32 characters without hyphens)
-				const truncatedId = cleanId.length > 32 ? cleanId.substring(0, 32) : cleanId;
-				
-				// Format as standard UUID with hyphens in the right places
-				try {
-					currentEventId = 
-						truncatedId.substring(0, 8) + '-' + 
-						truncatedId.substring(8, 12) + '-' + 
-						truncatedId.substring(12, 16) + '-' +
-						truncatedId.substring(16, 20) + '-' +
-						truncatedId.substring(20, 32);
-					
-					console.log(`[${mountId.current}] Formatted UUID:`, currentEventId);
-					
-					// Validate the final format
-					const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-					if (!uuidPattern.test(currentEventId)) {
-						console.error(`[${mountId.current}] UUID still invalid after formatting:`, currentEventId);
-						return null;
-					}
-				} catch (e) {
-					console.error(`[${mountId.current}] Failed to format UUID:`, e);
+				if (error) {
+					console.error(`[${mountId.current}] Error fetching last event:`, error);
 					return null;
 				}
-			}
-			
-			// Fetch the event from the database
-			const { data: events, error } = await supabase
-				.from('events')
-				.select('*')
-				.eq('id', currentEventId)
-				.single();
-			
-			if (error) {
-				console.error(`[${mountId.current}] Error fetching last event:`, error);
+				
+				if (!data || data.length === 0) {
+					console.log(`[${mountId.current}] No event found with ID:`, currentEventId);
+					return null;
+				}
+				
+				console.log(`[${mountId.current}] Last event found:`, data[0].title);
+				return data[0];
+			} catch (queryError) {
+				console.error(`[${mountId.current}] Error querying event:`, queryError);
 				return null;
 			}
-			
-			if (!events) {
-				console.log(`[${mountId.current}] No event found with ID:`, currentEventId);
-				return null;
-			}
-			
-			console.log(`[${mountId.current}] Last event found:`, events.title);
-			return events;
 		} catch (error) {
 			console.error(`[${mountId.current}] Error in fetchLastEvent:`, error);
 			return null;
@@ -159,31 +131,22 @@ export const createUpdatePathData = (supabase: SupabaseClient) => {
 		}
 
 		try {
-			// Convert events to IDs for storage
-			const chosenEventIds = chosenEvents.map(event => event.id);
-			const unchosenEventIds = unchosenEvents.map(event => event.id);
+			// Get the current event ID
 			const currentEventId = selectedEvent?.id;
 
 			console.log(`[${mountId.current}] Updating path data with:`, {
-				chosenEventIds,
-				unchosenEventIds,
+				chosenEvents: chosenEvents.length,
+				unchosenEvents: unchosenEvents.length,
 				currentEventId,
 			});
 
-			const pathData = {
-				chosenEvents: chosenEventIds,
-				unchosenEvents: unchosenEventIds,
-				currentEventId : currentEventId,
-			};
-
-			// Log the path data to be sent
-			console.log(`[${mountId.current}] Path data to be sent:`, JSON.stringify(pathData));
-
-			// First check if a record exists for this user
+			// First check if an active path exists for this user
 			const { data: existingData, error: checkError } = await supabase
-				.from('user_paths')
-				.select('id')
+				.from('paths')
+				.select('id, search_term, title')
 				.eq('user_id', userId)
+				.eq('status', 'active')
+				.order('updated_at', { ascending: false })
 				.limit(1);
 
 			if (checkError) {
@@ -192,17 +155,21 @@ export const createUpdatePathData = (supabase: SupabaseClient) => {
 			}
 
 			let result;
+			let pathId;
+			
 			if (existingData && existingData.length > 0) {
-				// Update existing record
-				console.log(`[${mountId.current}] Updating existing path record for user ${userId}`);
+				// Update existing path
+				pathId = existingData[0].id;
+				console.log(`[${mountId.current}] Updating existing path record ${pathId} for user ${userId}`);
+				
 				const { data, error } = await supabase
-					.from('user_paths')
+					.from('paths')
 					.update({
-						path_data: pathData,
 						current_event_id: currentEventId,
+						event_count: chosenEvents.length,
 						updated_at: new Date().toISOString(),
 					})
-					.eq('user_id', userId)
+					.eq('id', pathId)
 					.select();
 
 				if (error) {
@@ -210,16 +177,56 @@ export const createUpdatePathData = (supabase: SupabaseClient) => {
 					throw error;
 				}
 				result = data;
-			} else {
-				// Insert new record
+				
+				// Update path_events table for this path
+				// Only add new chosen events that aren't already in the database
+				if (chosenEvents.length > 0) {
+					for (let i = 0; i < chosenEvents.length; i++) {
+						const event = chosenEvents[i];
+						
+						// Check if this event is already in path_events
+						const { data: existingEvent, error: eventCheckError } = await supabase
+							.from('path_events')
+							.select('id')
+							.eq('path_id', pathId)
+							.eq('event_id', event.id)
+							.limit(1);
+							
+						if (eventCheckError) {
+							console.error(`[${mountId.current}] Error checking if event exists in path:`, eventCheckError);
+							continue;
+						}
+						
+						// Only add if it doesn't already exist
+						if (!existingEvent || existingEvent.length === 0) {
+							const { error: insertError } = await supabase
+								.from('path_events')
+								.insert({
+									path_id: pathId,
+									event_id: event.id,
+									title: event.title,
+									event_order: i,
+								});
+								
+							if (insertError) {
+								console.error(`[${mountId.current}] Error inserting path event:`, insertError);
+							}
+						}
+					}
+				}
+			} else if (selectedEvent) {
+				// Create a new path only if there's a selected event
 				console.log(`[${mountId.current}] Creating new path record for user ${userId}`);
+				
 				const { data, error } = await supabase
-					.from('user_paths')
+					.from('paths')
 					.insert({
 						user_id: userId,
-						path_data: pathData,
+						search_term: selectedEvent.subject || 'History',
+						subject: selectedEvent.subject || 'History',
+						title: selectedEvent.title,
 						current_event_id: currentEventId,
-						updated_at: new Date().toISOString(),
+						event_count: chosenEvents.length > 0 ? chosenEvents.length : 1,
 					})
 					.select();
 
@@ -228,6 +235,44 @@ export const createUpdatePathData = (supabase: SupabaseClient) => {
 					throw error;
 				}
 				result = data;
+				
+				// Get the newly created path ID
+				pathId = data[0].id;
+				
+				// Add the selected event to path_events
+				const { error: insertError } = await supabase
+					.from('path_events')
+					.insert({
+						path_id: pathId,
+						event_id: selectedEvent.id,
+						title: selectedEvent.title,
+						event_order: 0,
+					});
+					
+				if (insertError) {
+					console.error(`[${mountId.current}] Error inserting initial path event:`, insertError);
+				}
+				
+				// Add any other chosen events
+				if (chosenEvents.length > 0) {
+					for (let i = 0; i < chosenEvents.length; i++) {
+						const event = chosenEvents[i];
+						if (event.id !== selectedEvent.id) {
+							const { error: insertError } = await supabase
+								.from('path_events')
+								.insert({
+									path_id: pathId,
+									event_id: event.id,
+									title: event.title,
+									event_order: i + 1,
+								});
+								
+							if (insertError) {
+								console.error(`[${mountId.current}] Error inserting additional path event:`, insertError);
+							}
+						}
+					}
+				}
 			}
 
 			console.log(`[${mountId.current}] Updated path data in database:`, result);
@@ -265,81 +310,93 @@ export const createFetchUserPathData = (supabase: SupabaseClient) => {
 		if (!userId) return null;
 
 		try {
-			const { data, error } = await supabase
-				.from('user_paths')
-				.select('*')
+			// Fetch the active path
+			const { data: pathData, error: pathError } = await supabase
+				.from('paths')
+				.select('id, current_event_id')
 				.eq('user_id', userId)
+				.eq('status', 'active')
 				.order('updated_at', { ascending: false })
 				.limit(1);
 
-			if (error) {
-				throw error;
+			if (pathError) {
+				console.error(`[${mountId.current}] Error fetching path:`, pathError);
+				throw pathError;
 			}
 
-			if (data && data.length > 0 && data[0].path_data) {
-				const pathData = data[0].path_data;
-				console.log(`[${mountId.current}] Retrieved path data:`, pathData);
+			if (!pathData || pathData.length === 0) {
+				console.log(`[${mountId.current}] No active path found for user ${userId}`);
+				return null;
+			}
 
-				// Handle both camelCase and snake_case property naming
-				const chosenEvents = pathData.chosen_events || pathData.chosenEvents || [];
-				const unchosenEvents = pathData.unchosen_events || pathData.unchosenEvents || [];
-				const currentEventId = pathData.current_event_id || pathData.currentEventId;
-
-				console.log(`[${mountId.current}] Setting path data - chosen events:`,
-					chosenEvents ? chosenEvents.length : 0,
-					"unchosen events:", unchosenEvents ? unchosenEvents.length : 0);
-
-				// If callbacks are provided, call them with the retrieved data
-				if (callbacks) {
-					// If events are IDs, fetch the full events
-					if (chosenEvents && chosenEvents.length > 0 && typeof chosenEvents[0] === 'string') {
-						const { data: chosenEventData } = await supabase
-							.from('events')
-							.select('*')
-							.in('id', chosenEvents);
-						
-						if (chosenEventData && callbacks.onChosenEvents) {
-							callbacks.onChosenEvents(chosenEventData);
-						}
-					} else if (chosenEvents && callbacks.onChosenEvents) {
-						// If chosen events are already complete objects
-						callbacks.onChosenEvents(chosenEvents);
-					}
-
-					// Similar for unchosen events
-					if (unchosenEvents && unchosenEvents.length > 0 && typeof unchosenEvents[0] === 'string') {
-						const { data: unchosenEventData } = await supabase
-							.from('events')
-							.select('*')
-							.in('id', unchosenEvents);
-						
-						if (unchosenEventData && callbacks.onUnchosenEvents) {
-							callbacks.onUnchosenEvents(unchosenEventData);
-						}
-					} else if (unchosenEvents && callbacks.onUnchosenEvents) {
-						callbacks.onUnchosenEvents(unchosenEvents);
-					}
-
-					// If current events are based on chosen events
-					if (callbacks.onCurrentEvents) {
-						if (currentEventId) {
-							const { data: eventData } = await supabase
-								.from('events')
-								.select('*')
-								.eq('id', currentEventId);
-							
-							if (eventData && eventData.length > 0) {
-								callbacks.onCurrentEvents([eventData[0]]);
-							}
-						}
-					}
+			const pathId = pathData[0].id;
+			const currentEventId = pathData[0].current_event_id;
+			
+			// Fetch events in this path
+			const { data: pathEvents, error: eventsError } = await supabase
+				.from('path_events')
+				.select('event_id, title, event_order')
+				.eq('path_id', pathId)
+				.order('event_order', { ascending: true });
+				
+			if (eventsError) {
+				console.error(`[${mountId.current}] Error fetching path events:`, eventsError);
+				throw eventsError;
+			}
+			
+			if (!pathEvents || pathEvents.length === 0) {
+				console.log(`[${mountId.current}] No events found in path ${pathId}`);
+				return null;
+			}
+			
+			// Fetch full event details
+			const eventIds = pathEvents.map(pe => pe.event_id);
+			const { data: events, error: fullEventsError } = await supabase
+				.from('events')
+				.select('*')
+				.in('id', eventIds);
+				
+			if (fullEventsError) {
+				console.error(`[${mountId.current}] Error fetching full event details:`, fullEventsError);
+				throw fullEventsError;
+			}
+			
+			if (!events || events.length === 0) {
+				console.log(`[${mountId.current}] No full event details found`);
+				return null;
+			}
+			
+			// Convert to Event objects and sort by path order
+			const chosenEvents: Event[] = [];
+			for (const pathEvent of pathEvents) {
+				const fullEvent = events.find(e => e.id === pathEvent.event_id);
+				if (fullEvent) {
+					chosenEvents.push(fullEvent);
 				}
-
-				return pathData;
 			}
-
-			console.log(`[${mountId.current}] No path data found for user`);
-			return null;
+			
+			// Find the current event
+			const currentEvent = currentEventId 
+				? events.find(e => e.id === currentEventId) 
+				: null;
+				
+			if (callbacks) {
+				if (callbacks.onChosenEvents) {
+					callbacks.onChosenEvents(chosenEvents);
+				}
+				if (callbacks.onUnchosenEvents) {
+					callbacks.onUnchosenEvents([]);  // We don't store unchosen events anymore
+				}
+				if (callbacks.onCurrentEvents && currentEvent) {
+					callbacks.onCurrentEvents([currentEvent]);
+				}
+			}
+			
+			return {
+				chosenEvents,
+				unchosenEvents: [],
+				currentEventId,
+			};
 		} catch (error) {
 			console.error(`[${mountId.current}] Error fetching user path data:`, error);
 			return null;

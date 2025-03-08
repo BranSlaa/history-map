@@ -258,7 +258,7 @@ export const fetchEvents = (
 
 				if (!topic.includes(' ')) {
 					query = query.or(
-						`title.ilike.%${topic}%,info.ilike.%${topic}%`,
+						`title.ilike.%${topic}%,description.ilike.%${topic}%`,
 					);
 				} else {
 					try {
@@ -325,7 +325,7 @@ export const fetchEvents = (
 					} catch (error) {
 						console.error('Vector search failed:', error);
 						query = query.or(
-							`title.ilike.%${topic}%,info.ilike.%${topic}%`,
+							`title.ilike.%${topic}%,description.ilike.%${topic}%`,
 						);
 					}
 				}

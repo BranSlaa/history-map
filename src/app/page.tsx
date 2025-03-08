@@ -37,9 +37,7 @@ import { useAuth } from '@/context/AuthContext';
 import { useRouter, useSearchParams } from 'next/navigation';
 import supabase from '@/lib/supabaseClient';
 import WelcomeBack from './components/WelcomeBack';
-import { Header } from './components/Header';
 import { AdjustMapView } from '@/components/map/AdjustMapView';
-import FeaturedQuizzes from './components/FeaturedQuizzes';
 import {
 	createMapIcons,
 	addMapMarkerStyles,
@@ -449,6 +447,8 @@ const App = () => {
 						console.log(
 							`[${mountId.current}] Initialization complete: Found last event: ${event.title}`,
 						);
+						// Explicitly set showWelcomeBack to true if we have a last event
+						setShowWelcomeBack(true);
 					} else {
 						console.log(
 							`[${mountId.current}] Initialization complete: No last event found`,
@@ -587,7 +587,7 @@ const App = () => {
 	return (
 		<div className="flex flex-col h-screen bg-white">
 			<div className="flex-1 flex">
-				<div className="h-full w-full">
+				<div className="h-full w-full relative">
 					<ClientOnly>
 						<MapComponent
 							events={events}
@@ -661,10 +661,35 @@ const App = () => {
 							handleEventPanelRef={typedEventPanelRef}
 							handleUpdatePathData={updatePathData}
 						/>
+
+						{/* Welcome Toggle Button */}
+						<button
+							className="absolute z-50 top-4 right-4 bg-amber-600 hover:bg-amber-700 text-white p-2 px-4 rounded-lg shadow-md flex items-center"
+							onClick={() => setShowWelcomeBack(!showWelcomeBack)}
+						>
+							{showWelcomeBack ? 'Hide Search' : 'Show Search'}
+						</button>
+
+						{/* Welcome Back Modal */}
+						{showWelcomeBack && (
+							<div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-10">
+								<WelcomeBack
+									lastEvent={lastEvent}
+									onContinue={
+										handleContinueExplorationWrapper
+									}
+									onNewSearch={handleNewSearchWrapper}
+									fetchEventsCallback={
+										fetchEventsCallbackWrapper
+									}
+									topic={topic}
+									setTopic={setTopic}
+								/>
+							</div>
+						)}
 					</ClientOnly>
 				</div>
 			</div>
-			<FeaturedQuizzes />
 		</div>
 	);
 };

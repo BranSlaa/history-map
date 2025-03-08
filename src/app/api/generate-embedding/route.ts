@@ -3,7 +3,7 @@ import OpenAI from 'openai';
 
 // Configure OpenAI
 const openai = new OpenAI({
-	apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY,
+	apiKey: process.env.OPENAI_API_KEY,
 });
 
 // Set CORS headers
@@ -20,7 +20,7 @@ export async function OPTIONS() {
 export async function POST(request: Request) {
 	try {
 		// Check if API key exists
-		if (!process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
+		if (!process.env.OPENAI_API_KEY) {
 			console.error('OpenAI API key is missing');
 			return NextResponse.json(
 				{ error: 'OpenAI API key is not configured' },

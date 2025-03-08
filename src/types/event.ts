@@ -5,11 +5,12 @@ export interface Event {
 	lat: number;
 	lon: number;
 	subject: string;
-	info: string;
+	description: string;
 	key_terms?: string[];
 	embedding?: number[];
 	path_ids?: string[];
 	quiz_ids?: string[];
+	interacted?: boolean;
 }
 
 export interface UserEventInteraction {
