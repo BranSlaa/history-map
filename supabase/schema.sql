@@ -126,7 +126,8 @@ CREATE TABLE IF NOT EXISTS public.events (
     subject TEXT NOT NULL,
     description TEXT NOT NULL,
     embedding VECTOR(1536),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL
 );
 
 -- Enable RLS on events
