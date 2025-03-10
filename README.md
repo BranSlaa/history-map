@@ -191,67 +191,94 @@ go run . help
 
 An interactive history map application that integrates gamification elements, vector search capabilities, and user engagement through quizzes and rankings.
 
-## Key Features
+## Features
 
-- Interactive historical map with dynamic overlays for event visualization
-- Exploration Paths that track your journey through historical events
-- Gamified quizzes automatically generated after completing paths
-- User rankings based on quiz accuracy and historical engagement
-- Vector-based search using Supabase for contextual historical event discovery
+- **Interactive Historical Map**: Explore historical events on a dynamic map with event visualization
+- **Gamified Quizzes**: Test your knowledge with quizzes tied to historical events and locations
+- **User Rankings**: Compete with others based on quiz accuracy, engagement, and participation
+- **Personalized Profiles**: Track your progress, achievements, and historical interactions
+- **Vector Search**: Discover contextually relevant historical events using advanced search capabilities
 
-## Technical Overview
+## Tech Stack
 
-The application is built using:
+- **Frontend**: Next.js with React and TypeScript
+- **Styling**: Tailwind CSS for responsive and engaging UI/UX
+- **Authentication**: Supabase for secure user authentication
+- **Data Storage**: Supabase for storing user data, event data, and engagement metrics
+- **Vector Search**: Supabase for efficient historical event search and contextual relationships
 
-- **Frontend**: Next.js with React and TypeScript, styled with Tailwind CSS
-- **Authentication**: Supabase Auth for secure user management
-- **Database**: Supabase PostgreSQL for data storage with vector capabilities
-- **Map Visualization**: Interactive maps for historical event exploration
+## Getting Started
 
-## Database Schema
+### Prerequisites
 
-The application uses the following database tables:
+- Node.js (v18 or higher)
+- npm or yarn
+- Supabase account
 
-### Paths and Events
-
-- `paths`: Tracks user exploration paths through historical events
-- `path_events`: Maps events to paths with exploration order
-- `path_event_connections`: Tracks connections between events in a path
-- `user_event_interactions`: Records user interactions with events
-
-### Quizzes and Learning
-
-- `quizzes`: Stores generated quizzes tied to paths and events
-- `quiz_questions`: Individual questions for each quiz
-- `quiz_options`: Answer options for each question
-- `quiz_attempts`: User quiz attempts and results
-
-## Path Completion
-
-Users explore historical events through "Paths":
-
-1. A path is created when a user starts exploring events
-2. Each explored event is added to the path in sequence
-3. After exploring 10 events, the path is automatically completed
-4. Upon completion, a quiz is generated based on the explored events
-5. Quiz results contribute to user rankings and achievements
-
-## Development
+### Installation
 
 1. Clone the repository
-2. Install dependencies: `npm install`
-3. Configure environment variables (see `.env.example`)
-4. Run the development server: `npm run dev`
 
-## Database Migration
+    ```bash
+    git clone https://github.com/yourusername/history-map.git
+    cd history-map
+    ```
 
-To apply the database schema updates:
+2. Install dependencies
 
-```bash
-# Run the migration directly against your Supabase instance
-psql -h YOUR_SUPABASE_HOST -p 5432 -d postgres -U postgres -f src/migrations/20240701_schema_overhaul.sql
+    ```bash
+    npm install
+    # or
+    yarn install
+    ```
+
+3. Set up environment variables
+
+    ```bash
+    cp .env.example .env.local
+    ```
+
+    Then edit `.env.local` with your Supabase credentials.
+
+4. Start the development server
+
+    ```bash
+    npm run dev
+    # or
+    yarn dev
+    ```
+
+5. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+
+## Project Structure
+
 ```
+history-map/
+├── public/                  # Static assets
+├── src/
+│   ├── app/                 # Next.js app router pages
+│   │   ├── map/             # Map-related components
+│   │   ├── quiz/            # Quiz-related components
+│   │   └── ui/              # UI components
+│   ├── context/             # React context providers
+│   ├── hooks/               # Custom React hooks
+│   ├── lib/                 # Utility libraries
+│   ├── types/               # TypeScript type definitions
+│   └── utils/               # Utility functions
+├── supabase/                # Supabase configuration and migrations
+│   ├── migrations/          # Database migrations
+│   └── functions/           # Supabase Edge Functions
+└── tests/                   # Test files
+```
+
+## Development Guidelines
+
+- **Code Style**: Use 4-space width tab characters for indentation
+- **TypeScript**: Use strict type annotations
+- **Version Control**: Follow Git best practices with feature branching
+- **Documentation**: Include comments to explain 'why' something is done, not 'what' is being done
+- **Testing**: Write unit tests for critical logic and components
 
 ## License
 
-MIT
+This project is licensed under the MIT License - see the LICENSE file for details.
