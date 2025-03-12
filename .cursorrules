@@ -6,15 +6,15 @@
 			"styling": "Tailwind CSS for a responsive and engaging UI/UX"
 		},
 		"authentication": {
-			"provider": "Supabase",
+			"provider": "Supabase via API",
 			"integration": "Seamless integration with Next.js for secure user authentication"
 		},
 		"data_storage": {
-			"provider": "Supabase",
+			"provider": "Supabase via API",
 			"usage": "Store user data, event data, and engagement metrics"
 		},
 		"vector_search": {
-			"provider": "Supabase",
+			"provider": "Supabase via API",
 			"purpose": "Enable efficient historical event search and contextual relationships"
 		}
 	},

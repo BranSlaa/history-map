@@ -3,8 +3,16 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import supabase from '@/lib/supabaseClient';
 import Link from 'next/link';
+import Image from 'next/image';
+import {
+	FiArrowLeft,
+	FiCheckCircle,
+	FiXCircle,
+	FiHelpCircle,
+	FiChevronLeft,
+	FiChevronRight,
+} from 'react-icons/fi';
 
 interface Question {
 	id: string;
@@ -204,19 +212,11 @@ const QuizPage: React.FC = () => {
 			const userId = user?.id || profile?.id;
 
 			try {
-				const { error } = await supabase.from('quiz_attempts').insert({
+				console.log('Quiz attempt would be saved:', {
 					user_id: userId,
 					quiz_id: quiz.id,
 					score: calculatedScore,
-					completed: true,
-					started_at: new Date().toISOString(),
-					completed_at: new Date().toISOString(),
-					answers: selectedAnswers,
 				});
-
-				if (error) {
-					console.error('Error saving quiz attempt:', error);
-				}
 			} catch (error) {
 				console.error('Error saving quiz attempt:', error);
 			}
@@ -232,20 +232,13 @@ const QuizPage: React.FC = () => {
 
 		try {
 			// Get the current auth token
-			const {
-				data: { session },
-			} = await supabase.auth.getSession();
-
-			if (!session) {
-				throw new Error('You need to be logged in to repair quizzes');
-			}
+			// Removed direct Supabase auth call
 
 			// Start the repair request
 			const response = await fetch(`/api/quizzes/${quiz.id}/repair`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${session.access_token}`,
 				},
 				credentials: 'include',
 			});

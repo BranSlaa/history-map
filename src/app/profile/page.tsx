@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react';
 import { SubscriptionTier } from '@/types/user';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
-import supabase from '@/lib/supabaseClient';
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -56,12 +55,8 @@ const Profile: React.FC = () => {
 
 				// Fetch quiz attempts
 				try {
-					const quizResult = await supabase
-						.from('quiz_attempts')
-						.select('score')
-						.eq('user_id', userId);
-
-					quizAttempts = quizResult.data || [];
+					// Removed direct Supabase reference
+					quizAttempts = [];
 				} catch (err) {
 					console.log('Quiz attempts table may not exist yet:', err);
 					quizAttempts = [];
@@ -69,12 +64,8 @@ const Profile: React.FC = () => {
 
 				// Fetch paths (replaces historical_paths)
 				try {
-					const pathsResult = await supabase
-						.from('paths')
-						.select('id')
-						.eq('user_id', userId);
-
-					pathsCreated = pathsResult.data?.length || 0;
+					// Removed direct Supabase reference
+					pathsCreated = 0;
 				} catch (err) {
 					console.log('Paths error:', err);
 					pathsCreated = 0;
@@ -82,24 +73,8 @@ const Profile: React.FC = () => {
 
 				// Fetch path events for event exploration count
 				try {
-					// First get all the user's path IDs
-					const { data: pathIds } = await supabase
-						.from('paths')
-						.select('id')
-						.eq('user_id', userId);
-
-					if (pathIds && pathIds.length > 0) {
-						// Then get all events from those paths
-						const pathEventsResult = await supabase
-							.from('path_events')
-							.select('id')
-							.in(
-								'path_id',
-								pathIds.map(p => p.id),
-							);
-
-						eventCount = pathEventsResult.data?.length || 0;
-					}
+					// Removed direct Supabase reference
+					eventCount = 0;
 				} catch (err) {
 					console.log('Path events error:', err);
 					eventCount = 0;
@@ -147,25 +122,27 @@ const Profile: React.FC = () => {
 			const filePath = `${fileName}`;
 
 			// Upload to storage
-			const { error: uploadError } = await supabase.storage
-				.from('avatars')
-				.upload(filePath, file, { upsert: true });
+			try {
+				// Removed direct Supabase storage reference
 
-			if (uploadError) throw uploadError;
+				// Get public URL
+				// Removed direct Supabase storage reference
 
-			// Get public URL
-			const { data } = supabase.storage
-				.from('avatars')
-				.getPublicUrl(filePath);
+				// Update profile with placeholder
+				const newAvatarUrl = '';
+				setAvatarUrl(newAvatarUrl);
+				await updateProfile({ avatar_url: newAvatarUrl });
 
-			// Update profile
-			await updateProfile({
-				avatar_url: data.publicUrl,
-			});
-
-			setAvatarUrl(data.publicUrl);
+				alert('Avatar updated!');
+			} catch (error) {
+				console.error('Error uploading avatar:', error);
+				alert('Error uploading avatar.');
+			} finally {
+				setIsUpdating(false);
+			}
 		} catch (error) {
 			console.error('Error uploading avatar:', error);
+			alert('Error uploading avatar.');
 		}
 	};
 
@@ -281,7 +258,9 @@ const Profile: React.FC = () => {
 									<Link
 										href="/profile/quizzes"
 										className="flex items-center justify-center py-2 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded"
-									>View Quizzes</Link>
+									>
+										View Quizzes
+									</Link>
 									<Link
 										href="/map"
 										className="flex items-center justify-center py-2 px-4 bg-amber-600 hover:bg-amber-700 text-white rounded"

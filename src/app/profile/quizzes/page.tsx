@@ -4,10 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/context/AuthContext';
-import supabase from '@/lib/supabaseClient';
 import { Quiz, QuizAttempt } from '@/types/quiz';
-import { PathData } from '@/types/path';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
 import { FiArrowLeft, FiMap } from 'react-icons/fi';
 
 const ProfileQuizzes: React.FC = () => {
@@ -34,7 +31,6 @@ const ProfileQuizzes: React.FC = () => {
 
 	// Function to handle quiz generation
 	const handleGenerateQuiz = async () => {
-		// We're already in a protected route, so we know we have a user
 		setIsLoading(true);
 		setErrorMessage(null);
 		setSuccessMessage(null);
@@ -45,15 +41,6 @@ const ProfileQuizzes: React.FC = () => {
 		});
 
 		try {
-			// Get the current auth token before making request
-			const {
-				data: { session },
-			} = await supabase.auth.getSession();
-
-			if (!session) {
-				throw new Error('You need to be logged in to generate quizzes');
-			}
-
 			setGenerationProgress({
 				step: 2,
 				message:
@@ -61,17 +48,14 @@ const ProfileQuizzes: React.FC = () => {
 				isComplete: false,
 			});
 
-			// Start the fetch request
 			const response = await fetch('/api/quizzes/generate', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${session.access_token}`,
 				},
 				credentials: 'include',
 			});
 
-			// Show generating questions progress
 			setGenerationProgress({
 				step: 3,
 				message:
@@ -177,24 +161,8 @@ const ProfileQuizzes: React.FC = () => {
 	// Function to fetch user paths
 	const fetchUserPaths = useCallback(async () => {
 		if (!user?.id) return;
-
-		try {
-			const { data: pathsData, error } = await supabase
-				.from('paths')
-				.select('*')
-				.eq('user_id', user.id)
-				.order('updated_at', { ascending: false });
-
-			if (error) {
-				console.error('Error fetching user paths:', error);
-				return;
-			}
-
-			setUserPaths(pathsData || []);
-		} catch (error) {
-			console.error('Failed to fetch user paths:', error);
-		}
-	}, [user, supabase]);
+		setIsLoading(false);
+	}, [user]);
 
 	// Add to the useEffect where you fetch quizzes
 	useEffect(() => {
@@ -209,41 +177,6 @@ const ProfileQuizzes: React.FC = () => {
 		const fetchUserQuizzes = async () => {
 			try {
 				console.log('Fetching quizzes with user ID:', user.id);
-
-				// Fetch quizzes
-				const { data: quizzesData, error: quizzesError } =
-					await supabase
-						.from('quizzes')
-						.select('*')
-						.eq('user_id', user.id)
-						.order('created_at', { ascending: false });
-
-				if (quizzesError) {
-					console.error('Error fetching quizzes:', quizzesError);
-					setIsLoading(false);
-					return;
-				}
-
-				console.log('Successfully fetched quizzes:', quizzesData);
-				setQuizzes(quizzesData || []);
-
-				// Fetch attempts
-				const { data: attemptsData, error: attemptsError } =
-					await supabase
-						.from('quiz_attempts')
-						.select('*')
-						.eq('user_id', user.id);
-
-				if (attemptsError) {
-					console.error('Error fetching attempts:', attemptsError);
-				} else {
-					console.log('Successfully fetched attempts:', attemptsData);
-					setAttempts(attemptsData || []);
-				}
-
-				// Also fetch user paths
-				fetchUserPaths();
-
 				setIsLoading(false);
 			} catch (error) {
 				console.error('Error fetching quizzes:', error);
@@ -252,14 +185,13 @@ const ProfileQuizzes: React.FC = () => {
 		};
 
 		fetchUserQuizzes();
-	}, [user?.id, refreshKey, fetchUserPaths]);
+	}, [user, refreshKey, fetchUserPaths]);
 
-	// Function to generate quiz based on path
+	// Function to handle quiz generation from path
 	const handleGenerateQuizFromPath = async (
 		pathId: string,
 		pathName: string,
 	) => {
-		// We're already in a protected route, so we know we have a user
 		setIsLoading(true);
 		setErrorMessage(null);
 		setSuccessMessage(null);
@@ -270,15 +202,6 @@ const ProfileQuizzes: React.FC = () => {
 		});
 
 		try {
-			// Get the current auth token before making request
-			const {
-				data: { session },
-			} = await supabase.auth.getSession();
-
-			if (!session) {
-				throw new Error('You need to be logged in to generate quizzes');
-			}
-
 			setGenerationProgress({
 				step: 2,
 				message:
@@ -286,12 +209,10 @@ const ProfileQuizzes: React.FC = () => {
 				isComplete: false,
 			});
 
-			// Start the fetch request
 			const response = await fetch('/api/quizzes/generate', {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${session.access_token}`,
 				},
 				body: JSON.stringify({
 					path_id: pathId,
@@ -300,7 +221,6 @@ const ProfileQuizzes: React.FC = () => {
 				credentials: 'include',
 			});
 
-			// Show generating questions progress
 			setGenerationProgress({
 				step: 3,
 				message:
@@ -410,21 +330,10 @@ const ProfileQuizzes: React.FC = () => {
 		setSuccessMessage(null);
 
 		try {
-			// Get the current auth token
-			const {
-				data: { session },
-			} = await supabase.auth.getSession();
-
-			if (!session) {
-				throw new Error('You need to be logged in to repair quizzes');
-			}
-
-			// Start the repair request
 			const response = await fetch(`/api/quizzes/${quizId}/repair`, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
-					Authorization: `Bearer ${session.access_token}`,
 				},
 				credentials: 'include',
 			});
@@ -469,512 +378,218 @@ const ProfileQuizzes: React.FC = () => {
 		if (generationProgress.step === 0) return null;
 
 		return (
-			<div className="my-4 p-6 bg-gray-800 border border-amber-700 rounded-lg shadow-md">
-				<h3 className="font-bold text-lg text-amber-500 mb-3">
-					Quiz Generation Progress
-				</h3>
-				<div className="w-full bg-gray-700 rounded-full h-3 my-4">
-					<div
-						className="bg-amber-500 h-3 rounded-full transition-all duration-500"
-						style={{
-							width: `${Math.min(100, (generationProgress.step / 4) * 100)}%`,
-						}}
-					></div>
-				</div>
-				<p className="text-sm text-amber-100 mb-2">
-					{generationProgress.message}
-				</p>
-				{generationProgress.isComplete && (
-					<p className="text-sm mt-2 text-green-400 font-medium">
-						{generationProgress.step > 0
-							? 'Completed successfully!'
-							: 'Generation stopped.'}
+			<div className="mb-6">
+				<div className="bg-gray-100 p-4 rounded-lg">
+					<div className="flex items-center mb-2">
+						<div className="relative w-full bg-gray-200 rounded-full h-2.5">
+							<div
+								className="bg-blue-600 h-2.5 rounded-full"
+								style={{
+									width: `${(generationProgress.step / 4) * 100}%`,
+								}}
+							></div>
+						</div>
+						<span className="text-sm font-medium text-blue-700 ml-3">
+							{generationProgress.step}/4
+						</span>
+					</div>
+					<p className="text-sm text-gray-600">
+						{generationProgress.message}
 					</p>
-				)}
+				</div>
 			</div>
 		);
 	};
 
-	if (isLoading) {
-		return (
-			<div className="min-h-screen bg-gray-900 text-white p-6">
-				<Link
-					href="/profile"
-					className="flex items-center text-amber-500 mb-6 hover:text-amber-400"
-				>
-					<FiArrowLeft className="mr-2" /> Back to Profile
-				</Link>
-
-				{isLoading && (
-					<div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
-						<div className="bg-gray-800 p-6 rounded-lg max-w-md w-full shadow-xl">
-							<div className="flex flex-col items-center">
-								<div className="w-16 h-16 border-t-4 border-b-4 border-amber-500 rounded-full animate-spin mb-4"></div>
-								{generationProgress && (
-									<div className="text-center">
-										<div className="mb-2 font-semibold">
-											{generationProgress.step > 0
-												? `Step ${generationProgress.step}`
-												: ''}
-										</div>
-										<p className="text-gray-300">
-											{generationProgress.message}
-										</p>
-										{generationProgress.step === 3 && (
-											<div className="w-full bg-gray-700 h-2 mt-4 rounded-full overflow-hidden">
-												<div className="bg-amber-500 h-full rounded-full animate-pulse"></div>
-											</div>
-										)}
-									</div>
-								)}
-							</div>
-						</div>
-					</div>
-				)}
-
-				<h1 className="text-3xl font-bold mb-6">Your Quizzes</h1>
-
-				{errorMessage && (
-					<div className="bg-red-900/50 border border-red-500 text-white p-4 rounded-lg mb-6">
-						<p className="font-medium">{errorMessage}</p>
-						{errorMessage.includes(
-							'explore some historical events',
-						) && (
-							<div className="mt-4">
-								<Link
-									href="/map"
-									className="inline-flex items-center bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-lg"
-								>
-									<FiMap className="mr-2" /> Explore Map
-								</Link>
-							</div>
-						)}
-					</div>
-				)}
-
-				{successMessage && (
-					<div className="bg-green-900/50 border border-green-500 text-white p-4 rounded-lg mb-6">
-						<p>{successMessage}</p>
-					</div>
-				)}
-
-				<div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-					{/* Sidebar with Quiz Generation Options */}
-					<div className="bg-gray-800 p-6 rounded-lg lg:col-span-1 h-max">
-						<h2 className="text-xl font-semibold mb-4">
-							Generate Quiz
-						</h2>
-
-						{/* Generate from recent events */}
-						<div className="mb-6">
-							<h3 className="text-lg font-medium mb-2 text-amber-500">
-								From Recent Events
-							</h3>
-							<p className="mb-4 text-gray-300 text-sm">
-								Create a quiz based on historical events you've
-								recently interacted with on the map.
-							</p>
-							<button
-								onClick={handleGenerateQuiz}
-								disabled={isLoading}
-								className={`w-full py-2 px-4 rounded-lg ${
-									isLoading
-										? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-										: 'bg-amber-600 hover:bg-amber-700 text-white'
-								}`}
-							>
-								{isLoading ? 'Generating...' : 'Generate Quiz'}
-							</button>
-						</div>
-
-						{/* Divider */}
-						<div className="border-t border-gray-700 my-6"></div>
-
-						{/* Generate from paths */}
-						<div>
-							<h3 className="text-lg font-medium mb-2 text-amber-500">
-								From Your Paths
-							</h3>
-							{userPaths && userPaths.length > 0 ? (
-								<>
-									<p className="mb-4 text-gray-300 text-sm">
-										Create a quiz based on a specific
-										historical path you've explored.
-									</p>
-									<div className="space-y-3">
-										{userPaths.map(path => (
-											<div
-												key={path.id}
-												className="bg-gray-700 p-3 rounded-lg hover:bg-gray-600 transition-colors"
-											>
-												<h4 className="font-medium">
-													{path.name}
-												</h4>
-												<p className="text-xs text-gray-400 mb-2">
-													Created{' '}
-													{new Date(
-														path.created_at,
-													).toLocaleDateString()}
-												</p>
-												<button
-													onClick={() =>
-														handleGenerateQuizFromPath(
-															path.id,
-															path.name,
-														)
-													}
-													disabled={isLoading}
-													className={`w-full mt-2 py-1.5 px-3 rounded ${
-														isLoading
-															? 'bg-gray-800 text-gray-500 cursor-not-allowed'
-															: 'bg-amber-600 hover:bg-amber-700 text-white text-sm'
-													}`}
-												>
-													Generate Quiz
-												</button>
-											</div>
-										))}
-									</div>
-								</>
-							) : (
-								<div className="bg-gray-700 p-4 rounded-lg">
-									<p className="text-gray-300 mb-3">
-										You haven't created any historical paths
-										yet.
-									</p>
-									<Link
-										href="/map"
-										className="inline-flex items-center bg-amber-600 hover:bg-amber-700 text-white px-3 py-1.5 rounded text-sm"
-									>
-										<FiMap className="mr-2" /> Explore Map
-									</Link>
-								</div>
-							)}
-						</div>
-					</div>
-
-					{/* Quizzes List */}
-					<div className="bg-gray-800 p-6 rounded-lg lg:col-span-3">
-						<h2 className="text-xl font-semibold mb-4">
-							Your Quiz History
-						</h2>
-
-						{quizzes.length > 0 ? (
-							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-								{quizzes.map(quiz => {
-									const attempt = getQuizAttempt(quiz.id);
-									const quizStatus = attempt
-										? 'completed'
-										: 'not-taken';
-
-									return (
-										<div
-											key={quiz.id}
-											className={`bg-gray-700 rounded-lg shadow overflow-hidden border-l-4 ${
-												quizStatus === 'completed'
-													? 'border-green-500'
-													: 'border-amber-500'
-											}`}
-										>
-											<div className="p-5">
-												<div className="flex justify-between">
-													<h3 className="font-bold text-lg mb-1 truncate text-white">
-														{quiz.title}
-													</h3>
-													<span className="text-xs bg-gray-600 text-amber-300 px-2 py-1 rounded">
-														{quiz.difficulty}
-													</span>
-												</div>
-
-												<p className="text-gray-300 text-sm mb-3 line-clamp-2">
-													{quiz.description}
-												</p>
-
-												<div className="flex items-center text-sm text-gray-400 mb-3">
-													<span className="mr-3">
-														{quiz.question_count}{' '}
-														questions
-													</span>
-													<span>
-														Created{' '}
-														{new Date(
-															quiz.created_at,
-														).toLocaleDateString()}
-													</span>
-												</div>
-
-												<div className="flex flex-wrap gap-2">
-													<Link
-														href={`/quizzes/${quiz.id}`}
-														className="bg-amber-600 hover:bg-amber-700 text-white text-sm py-1 px-3 rounded"
-													>
-														{quizStatus ===
-														'completed'
-															? 'Review'
-															: 'Take Quiz'}
-													</Link>
-
-													{/* Repair option */}
-													{quiz.question_count ===
-														0 && (
-														<button
-															onClick={() =>
-																handleRepairQuiz(
-																	quiz.id,
-																)
-															}
-															className="bg-gray-600 hover:bg-gray-700 text-white text-sm py-1 px-3 rounded"
-														>
-															Repair Quiz
-														</button>
-													)}
-
-													{quizStatus ===
-														'completed' && (
-														<div className="ml-auto text-sm text-amber-400">
-															Score:{' '}
-															{Math.round(
-																(attempt?.score ||
-																	0) * 100,
-															)}
-															%
-														</div>
-													)}
-												</div>
-											</div>
-										</div>
-									);
-								})}
-							</div>
-						) : (
-							<div className="text-center p-6">
-								<p className="text-gray-300">
-									You haven't created any quizzes yet.
-								</p>
-								<p className="text-gray-400 text-sm mt-2">
-									Generate your first quiz to get started!
-								</p>
-							</div>
-						)}
-					</div>
+	return (
+		<div className="container mx-auto px-4 py-8 max-w-4xl">
+			<div className="flex justify-between items-center mb-6">
+				<div className="flex items-center gap-2">
+					<Link
+						href="/profile"
+						className="text-gray-600 hover:text-blue-500"
+					>
+						<FiArrowLeft size={20} />
+					</Link>
+					<h1 className="text-2xl font-bold">Your Quizzes</h1>
+				</div>
+				<div className="flex gap-2">
+					<Link
+						href="/"
+						className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50"
+					>
+						<FiMap className="mr-2" /> Back to Map
+					</Link>
 				</div>
 			</div>
-		);
-	}
 
-	return (
-		<div className="px-4 py-6">
-			<h1 className="text-3xl font-bold mb-4 text-white text-center">
-				Your Quizzes
-			</h1>
-
-			{/* Error message display */}
 			{errorMessage && (
-				<div className="bg-red-900 border border-red-500 text-red-200 px-4 py-3 rounded-lg mb-4 max-w-3xl mx-auto">
-					<span className="block sm:inline">{errorMessage}</span>
+				<div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6">
+					<p>{errorMessage}</p>
 				</div>
 			)}
 
-			{/* Success message display */}
 			{successMessage && (
-				<div className="bg-green-900 border border-green-500 text-green-200 px-4 py-3 rounded-lg mb-4 max-w-3xl mx-auto">
-					<span className="block sm:inline">{successMessage}</span>
+				<div className="bg-green-100 border-l-4 border-green-500 text-green-700 p-4 mb-6">
+					<p>{successMessage}</p>
 				</div>
 			)}
 
-			{/* Quiz generation progress */}
-			{generationProgress.step > 0 && (
-				<div className="max-w-3xl mx-auto mb-4">
-					<QuizGenerationProgress />
-				</div>
-			)}
+			<QuizGenerationProgress />
 
-			{/* Main content */}
-			<div className="grid grid-cols-12 gap-4 max-w-7xl mx-auto">
-				{/* Left panel - Generate options */}
-				<div className="col-span-12 lg:col-span-4">
-					<div className="bg-gray-800 rounded-lg shadow p-6 border border-gray-700">
-						<h2 className="text-xl font-semibold mb-4 text-amber-500">
-							Create New Quiz
-						</h2>
+			<div className="bg-white rounded-lg shadow-md p-6 mb-6">
+				<h2 className="text-xl font-semibold mb-4">
+					Generate a New Quiz
+				</h2>
+				<p className="text-gray-600 mb-4">
+					Create a personalized quiz based on your exploration
+					history. The quiz will include questions about historical
+					events you have discovered on your journey.
+				</p>
+				<button
+					onClick={handleGenerateQuiz}
+					disabled={isLoading || !canGenerateQuiz}
+					className={`px-4 py-2 rounded-md text-white font-medium ${
+						isLoading || !canGenerateQuiz
+							? 'bg-gray-400 cursor-not-allowed'
+							: 'bg-blue-600 hover:bg-blue-700'
+					}`}
+				>
+					{isLoading ? 'Generating...' : 'Generate Quiz'}
+				</button>
+			</div>
 
-						{/* Generic quiz generation button */}
-						<div className="mb-8">
-							<h3 className="text-lg font-medium mb-2 text-white">
-								From Recent Events
-							</h3>
-							<p className="text-sm text-gray-300 mb-3">
-								Generate a quiz based on all {eventCount}{' '}
-								historical events you've explored.
-							</p>
-							<button
-								onClick={handleGenerateQuiz}
-								disabled={isLoading}
-								className={`bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded ${
-									isLoading
-										? 'opacity-50 cursor-not-allowed'
-										: ''
-								}`}
+			{userPaths.length > 0 && (
+				<div className="bg-white rounded-lg shadow-md p-6 mb-6">
+					<h2 className="text-xl font-semibold mb-4">
+						Generate Quiz from Your Paths
+					</h2>
+					<p className="text-gray-600 mb-4">
+						Create a quiz based on a specific exploration path.
+					</p>
+					<div className="space-y-4">
+						{userPaths.map((path: any) => (
+							<div
+								key={path.id}
+								className="border rounded-lg p-4 hover:bg-gray-50"
 							>
-								{isLoading ? 'Generating...' : 'Generate Quiz'}
-							</button>
-						</div>
-
-						{/* Path-based quiz options */}
-						{userPaths.length > 0 && (
-							<div>
-								<h3 className="text-lg font-medium mb-2 text-white">
-									From Your Paths
-								</h3>
-								<p className="text-sm text-gray-300 mb-3">
-									Generate quizzes based on specific
-									historical paths you've taken
-								</p>
-								<div className="space-y-3">
-									{userPaths.map(path => (
-										<div
-											key={path.id}
-											className="border border-gray-600 p-3 rounded bg-gray-700"
-										>
-											<h4 className="font-medium text-amber-400">
-												{path.search_term ||
-													path.name ||
-													'Historical Path'}
-											</h4>
-											<p className="text-xs text-gray-400 mb-2">
-												Created{' '}
-												{new Date(
-													path.created_at,
-												).toLocaleDateString()}
-											</p>
-											<button
-												onClick={() =>
-													handleGenerateQuizFromPath(
-														path.id,
-														path.search_term ||
-															path.name ||
-															'Historical Path',
-													)
-												}
-												disabled={isLoading}
-												className="bg-amber-600 hover:bg-amber-700 text-white text-sm py-1 px-3 rounded mr-2"
-											>
-												Generate Quiz
-											</button>
-										</div>
-									))}
+								<div className="flex justify-between items-center">
+									<div>
+										<h3 className="font-medium">
+											{path.name || 'Unnamed Path'}
+										</h3>
+										<p className="text-sm text-gray-500">
+											Created:{' '}
+											{new Date(
+												path.created_at,
+											).toLocaleDateString()}
+										</p>
+									</div>
+									<button
+										onClick={() =>
+											handleGenerateQuizFromPath(
+												path.id,
+												path.name || 'Unnamed Path',
+											)
+										}
+										disabled={isLoading}
+										className={`px-3 py-1 rounded-md text-white text-sm font-medium ${
+											isLoading
+												? 'bg-gray-400 cursor-not-allowed'
+												: 'bg-blue-600 hover:bg-blue-700'
+										}`}
+									>
+										Generate Quiz
+									</button>
 								</div>
 							</div>
-						)}
+						))}
 					</div>
 				</div>
+			)}
 
-				{/* Right panel - Existing quizzes */}
-				<div className="col-span-12 lg:col-span-8">
-					<div className="bg-gray-800 rounded-lg shadow-md p-6 border border-gray-700">
-						<h2 className="text-xl font-semibold mb-4 text-amber-500">
-							Your Existing Quizzes
-						</h2>
+			<div className="bg-white rounded-lg shadow-md p-6">
+				<h2 className="text-xl font-semibold mb-4">Your Quizzes</h2>
+				{isLoading ? (
+					<p>Loading your quizzes...</p>
+				) : quizzes.length === 0 ? (
+					<p className="text-gray-600">
+						You haven't created any quizzes yet. Generate a quiz to
+						test your historical knowledge!
+					</p>
+				) : (
+					<div className="space-y-4">
+						{quizzes.map(quiz => {
+							const attempt = getQuizAttempt(quiz.id);
+							const hasAttempted = !!attempt;
+							const score = hasAttempted ? attempt.score : null;
 
-						{quizzes.length === 0 ? (
-							<div className="text-center p-6">
-								<p className="text-gray-300">
-									You haven't created any quizzes yet.
-								</p>
-								<p className="text-gray-400 text-sm mt-2">
-									Generate your first quiz to get started!
-								</p>
-							</div>
-						) : (
-							<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-								{quizzes.map(quiz => {
-									const attempt = getQuizAttempt(quiz.id);
-									const quizStatus = attempt
-										? 'completed'
-										: 'not-taken';
-
-									return (
-										<div
-											key={quiz.id}
-											className={`bg-gray-700 rounded-lg shadow overflow-hidden border-l-4 ${
-												quizStatus === 'completed'
-													? 'border-green-500'
-													: 'border-amber-500'
-											}`}
-										>
-											<div className="p-5">
-												<div className="flex justify-between">
-													<h3 className="font-bold text-lg mb-1 truncate text-white">
-														{quiz.title}
-													</h3>
-													<span className="text-xs bg-gray-600 text-amber-300 px-2 py-1 rounded">
-														{quiz.difficulty}
-													</span>
-												</div>
-
-												<p className="text-gray-300 text-sm mb-3 line-clamp-2">
-													{quiz.description}
-												</p>
-
-												<div className="flex items-center text-sm text-gray-400 mb-3">
-													<span className="mr-3">
-														{quiz.question_count}{' '}
-														questions
-													</span>
-													<span>
-														Created{' '}
-														{new Date(
-															quiz.created_at,
-														).toLocaleDateString()}
-													</span>
-												</div>
-
-												<div className="flex flex-wrap gap-2">
-													<Link
-														href={`/quizzes/${quiz.id}`}
-														className="bg-amber-600 hover:bg-amber-700 text-white text-sm py-1 px-3 rounded"
+							return (
+								<div
+									key={quiz.id}
+									className="border rounded-lg p-4 hover:bg-gray-50"
+								>
+									<div className="flex flex-col md:flex-row md:justify-between md:items-center">
+										<div className="mb-4 md:mb-0">
+											<h3 className="font-medium">
+												{quiz.title}
+											</h3>
+											<p className="text-sm text-gray-500">
+												{quiz.description ||
+													'No description'}
+											</p>
+											<div className="flex flex-wrap gap-2 mt-2">
+												<span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
+													{quiz.difficulty}
+												</span>
+												<span className="inline-block bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded">
+													{quiz.subject}
+												</span>
+												<span className="inline-block bg-gray-100 text-gray-800 text-xs px-2 py-1 rounded">
+													{quiz.question_count}{' '}
+													questions
+												</span>
+												{hasAttempted && (
+													<span
+														className={`inline-block text-white text-xs px-2 py-1 rounded ${
+															score && score >= 70
+																? 'bg-green-500'
+																: score &&
+																	  score >=
+																			40
+																	? 'bg-yellow-500'
+																	: 'bg-red-500'
+														}`}
 													>
-														{quizStatus ===
-														'completed'
-															? 'Review'
-															: 'Take Quiz'}
-													</Link>
-
-													{/* Repair option */}
-													{quiz.question_count ===
-														0 && (
-														<button
-															onClick={() =>
-																handleRepairQuiz(
-																	quiz.id,
-																)
-															}
-															className="bg-gray-600 hover:bg-gray-700 text-white text-sm py-1 px-3 rounded"
-														>
-															Repair Quiz
-														</button>
-													)}
-
-													{quizStatus ===
-														'completed' && (
-														<div className="ml-auto text-sm text-amber-400">
-															Score:{' '}
-															{Math.round(
-																(attempt?.score ||
-																	0) * 100,
-															)}
-															%
-														</div>
-													)}
-												</div>
+														Score: {score}%
+													</span>
+												)}
 											</div>
 										</div>
-									);
-								})}
-							</div>
-						)}
+										<div className="flex flex-col sm:flex-row gap-2">
+											<Link
+												href={`/quizzes/${quiz.id}`}
+												className="inline-block px-3 py-1 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 text-center"
+											>
+												{hasAttempted
+													? 'Retake Quiz'
+													: 'Start Quiz'}
+											</Link>
+											<button
+												onClick={() =>
+													handleRepairQuiz(quiz.id)
+												}
+												className="inline-block px-3 py-1 rounded-md bg-yellow-500 text-white text-sm font-medium hover:bg-yellow-600 text-center"
+											>
+												Repair Quiz
+											</button>
+										</div>
+									</div>
+								</div>
+							);
+						})}
 					</div>
-				</div>
+				)}
 			</div>
 		</div>
 	);

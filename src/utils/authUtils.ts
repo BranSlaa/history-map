@@ -1,8 +1,5 @@
 import { SubscriptionTier, User } from '@/types/user';
 
-// Define API URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
-
 // Store JWT token in localStorage
 export const storeToken = (token: string) => {
 	localStorage.setItem('jwt_token', token);
@@ -26,45 +23,109 @@ export const isAuthenticated = (): boolean => {
 	return getToken() !== null;
 };
 
-// Get JWT token from backend
-export const fetchToken = async (
-	clerkId: string,
-	clerkToken?: string,
+// Login user via Next.js API route
+export const loginUser = async (
+	email: string,
+	password: string
 ): Promise<string | null> => {
 	try {
 		if (typeof window === 'undefined') {
 			return null;
 		}
 
-		const response = await fetch(`${API_URL}/auth/token`, {
+		const response = await fetch('/api/auth/login', {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				...(clerkToken && { Authorization: `Bearer ${clerkToken}` }),
 			},
-			credentials: 'include',
-			body: JSON.stringify({ clerk_id: clerkId }),
+			body: JSON.stringify({ 
+				email,
+				password 
+			}),
 		});
 
 		if (!response.ok) {
-			console.error(
-				'Token fetch failed:',
-				response.status,
-				response.statusText,
-			);
+			console.error('Login failed:', response.status, response.statusText);
 			return null;
 		}
 
 		const data = await response.json();
-		storeToken(data.access_token);
-		return data.access_token;
+		if (data && data.access_token) {
+			storeToken(data.access_token);
+			return data.access_token;
+		}
+		return null;
 	} catch (error) {
-		console.error('Error fetching token:', error);
+		console.error('Error during login:', error);
 		return null;
 	}
 };
 
-// Get current user from backend
+// Register a new user via Next.js API route
+export const registerUser = async (
+	email: string,
+	password: string,
+	fullName: string
+): Promise<User | null> => {
+	try {
+		const response = await fetch('/api/auth/register', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				email,
+				password,
+				full_name: fullName
+			}),
+		});
+
+		if (!response.ok) {
+			console.error('Registration failed:', response.status, response.statusText);
+			return null;
+		}
+
+		const data = await response.json();
+		
+		// If registration also returns a token, store it
+		if (data && data.access_token) {
+			storeToken(data.access_token);
+		}
+		
+		return data.user || data;
+	} catch (error) {
+		console.error('Error during registration:', error);
+		return null;
+	}
+};
+
+// Logout user
+export const logoutUser = async (): Promise<boolean> => {
+	try {
+		const token = getToken();
+		if (!token) return true; // Already logged out
+		
+		const response = await fetch('/api/auth/logout', {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: `Bearer ${token}`
+			}
+		});
+		
+		// Always remove the token locally, even if the server request fails
+		removeToken();
+		
+		return response.ok;
+	} catch (error) {
+		console.error('Error during logout:', error);
+		// Still remove the token on error
+		removeToken();
+		return false;
+	}
+};
+
+// Get current user from backend via Next.js API route
 export const fetchCurrentUser = async (): Promise<User | null> => {
 	const token = getToken();
 	if (!token) return null;
@@ -74,20 +135,16 @@ export const fetchCurrentUser = async (): Promise<User | null> => {
 			'Fetching current user with token:',
 			token.substring(0, 15) + '...',
 		);
-		const response = await fetch(`${API_URL}/users/me`, {
+		
+		const response = await fetch('/api/users/me', {
 			headers: {
 				Authorization: `Bearer ${token}`,
-				Accept: 'application/json',
+				'Content-Type': 'application/json',
 			},
-			credentials: 'include',
 		});
 
 		if (!response.ok) {
-			console.error(
-				'User fetch failed:',
-				response.status,
-				response.statusText,
-			);
+			console.error('User fetch failed:', response.status, response.statusText);
 			if (response.status === 401) {
 				console.log('Removing invalid token');
 				removeToken();
@@ -102,7 +159,7 @@ export const fetchCurrentUser = async (): Promise<User | null> => {
 	}
 };
 
-// Update user subscription tier
+// Update user subscription tier via Next.js API route
 export const updateUserTier = async (
 	tier: SubscriptionTier,
 ): Promise<User | null> => {
@@ -111,22 +168,18 @@ export const updateUserTier = async (
 
 	try {
 		console.log('Updating user tier to:', tier);
-		const response = await fetch(`${API_URL}/users/me/tier`, {
+		
+		const response = await fetch('/api/users/me/tier', {
 			method: 'PUT',
 			headers: {
 				'Content-Type': 'application/json',
 				Authorization: `Bearer ${token}`,
 			},
-			credentials: 'include',
-			body: JSON.stringify(tier),
+			body: JSON.stringify({ tier }),
 		});
 
 		if (!response.ok) {
-			console.error(
-				'Tier update failed:',
-				response.status,
-				response.statusText,
-			);
+			console.error('Tier update failed:', response.status, response.statusText);
 			return null;
 		}
 
@@ -135,43 +188,4 @@ export const updateUserTier = async (
 		console.error('Error updating user tier:', error);
 		return null;
 	}
-};
-
-// Create a new user
-export const createUser = async (
-	clerkId: string,
-	username: string,
-	email: string,
-	tier: SubscriptionTier = SubscriptionTier.STUDENT,
-): Promise<User | null> => {
-	try {
-		console.log('Creating new user with clerk ID:', clerkId);
-		const response = await fetch(`${API_URL}/users`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-			},
-			credentials: 'include',
-			body: JSON.stringify({
-				clerk_id: clerkId,
-				username,
-				email,
-				subscription_tier: tier,
-			}),
-		});
-
-		if (!response.ok) {
-			console.error(
-				'User creation failed:',
-				response.status,
-				response.statusText,
-			);
-			return null;
-		}
-
-		return await response.json();
-	} catch (error) {
-		console.error('Error creating user:', error);
-		return null;
-	}
-};
+}; 

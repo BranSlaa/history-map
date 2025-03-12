@@ -7,20 +7,7 @@ import React, {
 	useState,
 	ReactNode,
 } from 'react';
-import { User as SupabaseUser, AuthError } from '@supabase/supabase-js';
 import { User, Profile, SubscriptionTier } from '@/types/user';
-import supabase from '@/lib/supabaseClient';
-import { generateUsername } from '@/utils/usernameGenerator';
-
-interface AuthContextType {
-	authUser: SupabaseUser | null;
-	user: User | null;
-	profile: Profile | null;
-	loading: boolean;
-	error: string | null;
-	signOut: () => Promise<{ error: AuthError | null }>;
-	updateProfile: (profile: Partial<Profile>) => Promise<void>;
-}
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -31,7 +18,7 @@ interface AuthProviderProps {
 export function AuthProvider({
 	children,
 }: AuthProviderProps): React.ReactElement {
-	const [authUser, setAuthUser] = useState<SupabaseUser | null>(null);
+	const [authUser, setAuthUser] = useState<any | null>(null);
 	const [user, setUser] = useState<User | null>(null);
 	const [profile, setProfile] = useState<Profile | null>(null);
 	const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -48,183 +35,121 @@ export function AuthProvider({
 				return;
 			}
 
-			// Try fetching the profile directly
-			const { data: profileData, error: profileError } = await supabase
-				.from('profiles')
-				.select('*')
-				.eq('id', sessionUser.id)
-				.single();
+			// Fetch user profile using API
+			const response = await fetch('/api/user/profile', {
+				headers: {
+					Authorization: `Bearer ${getToken()}`,
+					'Content-Type': 'application/json',
+				},
+			});
 
-			if (profileError) {
-				console.error('Error fetching profile:', profileError);
+			if (!response.ok) {
+				if (response.status === 401) {
+					setUser(null);
+					setProfile(null);
+					return;
+				}
+				throw new Error('Failed to fetch user profile');
+			}
 
-				// Generate a username from email or user ID
-				const username =
-					sessionUser.email?.split('@')[0] ||
-					`user_${sessionUser.id.substring(0, 8)}`;
+			const profileData = await response.json();
 
-				// Profile doesn't exist - this could be a new user
-				// Create a new profile for the user
-				let newProfileData: any;
-				let createProfileError: any;
-
-				// Always use the API endpoint for profile creation
+			// Check if profile exists
+			if (!profileData) {
+				// If no profile exists, create one with API
 				try {
-					const response = await fetch('/api/profile', {
+					const createResponse = await fetch('/api/user/profile', {
 						method: 'POST',
 						headers: {
 							'Content-Type': 'application/json',
+							Authorization: `Bearer ${getToken()}`,
 						},
 						body: JSON.stringify({
-							id: sessionUser.id,
-							username: username,
+							username:
+								sessionUser.email?.split('@')[0] || 'user',
 							avatar_url:
 								sessionUser.user_metadata?.avatar_url || '',
-							tier: 'student',
 						}),
 					});
 
-					const result = await response.json();
-
-					if (!response.ok) {
-						createProfileError = {
-							message: result.error || 'Unknown error',
-						};
-					} else {
-						newProfileData = result.data;
+					if (!createResponse.ok) {
+						throw new Error('Failed to create user profile');
 					}
+
+					const newProfileData = await createResponse.json();
+
+					// Set user and profile with new data
+					setProfile(newProfileData);
+					setUser({
+						id: sessionUser.id,
+						email: sessionUser.email,
+						...newProfileData,
+					});
 				} catch (error) {
-					createProfileError = {
-						message:
-							error instanceof Error
-								? error.message
-								: 'Failed to create profile',
-					};
+					console.error('Error creating profile:', error);
+					setError('Error creating profile');
 				}
-
-				if (createProfileError) {
-					console.error(
-						'Error creating profile:',
-						createProfileError,
-					);
-					setUser(null);
-					setProfile(null);
-					throw new Error('Failed to create profile');
-				}
-
-				// Create an enhanced profile for the UI
-				const enhancedProfile = {
-					...newProfileData,
-					subscription_tier: mapTierToEnum(newProfileData.tier),
-				};
-
-				// Set the new profile
-				setProfile(enhancedProfile as Profile);
-
-				// Create a user object from the profile data
-				const constructedUser: User = {
-					id: sessionUser.id,
-					email: sessionUser.email,
-					profile_id: sessionUser.id,
-					username: generateUsername(),
-					avatar_url: sessionUser.user_metadata?.avatar_url || '',
-					profile: enhancedProfile as Profile,
-				};
-
-				setUser(constructedUser);
 			} else {
-				// Create an enhanced profile for the UI
-				const enhancedProfile = {
-					...profileData,
-					subscription_tier: mapTierToEnum(profileData.tier),
-				};
-
-				// Set the profile
-				setProfile(enhancedProfile as Profile);
-
-				// Construct user from auth user and profile data
-				const constructedUser: User = {
+				// Use the retrieved profile
+				setProfile(profileData);
+				setUser({
 					id: sessionUser.id,
 					email: sessionUser.email,
-					profile_id: profileData.id,
-					avatar_url:
-						sessionUser.user_metadata?.avatar_url ||
-						profileData.avatar_url ||
-						'',
-					profile: enhancedProfile as Profile,
-				};
-
-				setUser(constructedUser);
+					...profileData,
+				});
 			}
-		} catch (err) {
-			console.error('Error syncing user:', err);
-			setError(
-				`Error syncing user: ${
-					err instanceof Error ? err.message : JSON.stringify(err)
-				}`,
-			);
-			setUser(null);
-			setProfile(null);
+		} catch (error) {
+			console.error('Error syncing user:', error);
+			setError('Error syncing user profile');
 		} finally {
 			setIsLoading(false);
 		}
 	};
 
 	useEffect(() => {
-		let mounted = true;
-
 		const setupAuth = async () => {
+			setIsLoading(true);
 			try {
-				console.log('Setting up auth...');
-				setIsLoading(true);
-
-				// Get initial session
-				const {
-					data: { session },
-				} = await supabase.auth.getSession();
-
-				console.log('Initial session:', session?.user?.id);
-
-				if (session?.user) {
-					setAuthUser(session.user);
-					await syncUser(session.user);
-				} else {
+				if (!isAuthenticated()) {
+					// No token exists
 					setAuthUser(null);
 					setUser(null);
 					setProfile(null);
+					setIsLoading(false);
+					return;
 				}
 
-				// Set up auth state change listener
-				const {
-					data: { subscription },
-				} = supabase.auth.onAuthStateChange(async (event, session) => {
-					console.log('Auth state change:', event, session?.user?.id);
-					setAuthUser(session?.user || null);
+				// Fetch current user with token
+				const userData = await fetchCurrentUser();
 
-					if (session?.user) {
-						await syncUser(session.user);
-					} else {
-						setUser(null);
-						setProfile(null);
-					}
-				});
+				if (!userData) {
+					setAuthUser(null);
+					setUser(null);
+					setProfile(null);
+					setIsLoading(false);
+					return;
+				}
 
-				return () => {
-					subscription.unsubscribe();
-				};
+				setAuthUser(userData);
+				await syncUser(userData);
 			} catch (error) {
 				console.error('Error setting up auth:', error);
+				setError('Authentication error');
+				setAuthUser(null);
+				setUser(null);
+				setProfile(null);
 			} finally {
-				if (mounted) {
-					setIsLoading(false);
-				}
+				setIsLoading(false);
 			}
 		};
 
 		setupAuth();
 
+		// Set up event listener for auth state changes
+		window.addEventListener('auth-state-change', setupAuth);
+
 		return () => {
-			mounted = false;
+			window.removeEventListener('auth-state-change', setupAuth);
 		};
 	}, []);
 
@@ -233,58 +158,80 @@ export function AuthProvider({
 		setError(null);
 
 		try {
-			if (!profile || !authUser) throw new Error('No user logged in');
-
-			// Transform the profile data to match the database schema
-			const dbProfileData: any = { ...profileData };
-
-			// Update the record in the database
-			const { data, error } = await supabase
-				.from('profiles')
-				.update(dbProfileData)
-				.eq('id', profile.id)
-				.select('*')
-				.single();
-
-			if (error) throw error;
-
-			// Update local state with the new profile data
-			const enhancedProfile = {
-				...data,
-				subscription_tier: data.subscription_tier,
-			};
-
-			setProfile(enhancedProfile as Profile);
-
-			// Update the user object with the new profile data
-			if (user) {
-				const updatedUser: User = {
-					...user,
-					avatar_url: data.avatar_url || user.avatar_url,
-					profile: enhancedProfile as Profile,
-				};
-				setUser(updatedUser);
+			if (!user) {
+				throw new Error('No user is logged in');
 			}
-		} catch (err) {
-			console.error('Error updating profile:', err);
-			setError(
-				`Error updating profile: ${
-					err instanceof Error ? err.message : JSON.stringify(err)
-				}`,
-			);
+
+			const response = await fetch('/api/user/profile', {
+				method: 'PUT',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${getToken()}`,
+				},
+				body: JSON.stringify(profileData),
+			});
+
+			if (!response.ok) {
+				throw new Error('Failed to update profile');
+			}
+
+			const updatedProfile = await response.json();
+			setProfile(prevProfile => ({
+				...prevProfile!,
+				...updatedProfile,
+			}));
+
+			setUser(prevUser => ({
+				...prevUser!,
+				...updatedProfile,
+			}));
+		} catch (error) {
+			console.error('Error updating profile:', error);
+			setError('Failed to update profile');
+			throw error;
 		} finally {
 			setIsLoading(false);
 		}
 	};
 
 	const signOut = async () => {
-		// Clear all state
-		setAuthUser(null);
-		setUser(null);
-		setProfile(null);
+		setIsLoading(true);
 
-		// Call Supabase signOut with global scope to ensure complete logout
-		return await supabase.auth.signOut({ scope: 'global' });
+		try {
+			// Call the sign out API endpoint
+			const response = await fetch('/api/auth/logout', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${getToken()}`,
+				},
+			});
+
+			// Even if the server logout fails, remove local token
+			removeToken();
+
+			// Reset all states
+			setAuthUser(null);
+			setUser(null);
+			setProfile(null);
+
+			// Trigger auth state change event
+			window.dispatchEvent(new Event('auth-state-change'));
+
+			return { error: null };
+		} catch (error) {
+			console.error('Error signing out:', error);
+
+			// Still remove token and reset state on error
+			removeToken();
+			setAuthUser(null);
+			setUser(null);
+			setProfile(null);
+
+			return { error };
+		} finally {
+			setIsLoading(false);
+		}
 	};
 
 	return (
@@ -306,7 +253,7 @@ export function AuthProvider({
 
 export const useAuth = (): AuthContextType => {
 	const context = useContext(AuthContext);
-	if (context === undefined) {
+	if (!context) {
 		throw new Error('useAuth must be used within an AuthProvider');
 	}
 	return context;
@@ -316,8 +263,8 @@ function mapTierToEnum(tier: string): SubscriptionTier {
 	switch (tier?.toLowerCase()) {
 		case 'scholar':
 			return SubscriptionTier.SCHOLAR;
-		case 'historian':
-			return SubscriptionTier.HISTORIAN;
+		case 'educator':
+			return SubscriptionTier.EDUCATOR;
 		case 'student':
 		default:
 			return SubscriptionTier.STUDENT;
