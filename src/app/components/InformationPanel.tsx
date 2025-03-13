@@ -47,12 +47,12 @@ const InformationPanel: React.FC<InformationPanelProps> = ({
 				</span>
 			</div>
 
-			<div className="overflow-y-auto max-h-[calc(25vh)] mb-3 pr-2">
+			<div className="overflow-y-auto mb-3 pr-2">
 				<h3 className="font-medium text-stone-800 dark:text-amber-100 mb-1">
 					Description:
 				</h3>
 				<p className="text-stone-700 dark:text-amber-200 text-[18px]">
-					{event.info}
+					{event.description}
 				</p>
 			</div>
 
