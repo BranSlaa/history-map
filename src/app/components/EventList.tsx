@@ -25,14 +25,10 @@ const EventList: React.FC<EventListProps> = ({ events, onEventClick }) => {
 			}}
 		>
 			<div className="grid grid-cols-[1fr,auto] gap-2 items-center">
-				<span className="text-stone-800 dark:text-amber-100">
-					{event.title}
-				</span>
-				<span className="text-xs text-stone-600 dark:text-amber-300">
-					{event.year}
-				</span>
+				<span className="text-stone-800">{event.title}</span>
+				<span className="text-xs text-stone-600">{event.year}</span>
 			</div>
-			<div className="text-xs mt-1 text-stone-600 dark:text-amber-300 opacity-70">
+			<div className="text-xs mt-1 text-stone-600 opacity-70">
 				{event.subject
 					.split('-')
 					.map(word => word.charAt(0).toUpperCase() + word.slice(1))
@@ -42,8 +38,8 @@ const EventList: React.FC<EventListProps> = ({ events, onEventClick }) => {
 	);
 
 	return (
-		<div className="flex-grow overflow-y-auto max-h-[calc(60vh-10rem)]">
-			<ul className="list-none p-3">
+		<div className="flex-grow overflow-y-auto h-full">
+			<ul className="list-none p-3 h-full">
 				{events.data &&
 					events.data.length > 0 &&
 					events.data.map(event => renderEventItem(event))}

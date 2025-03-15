@@ -1,22 +1,37 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Event } from '@/types/event';
 import EventSearch from './EventSearch';
 import EventList from './EventList';
+import { setHeaderHeight } from '../utils/headerHeight';
 
 interface EventPanelProps {
 	onSelectEvent: (event: Event) => void;
+	onSearch?: (query: string) => Promise<Event[]>;
 }
 
-const EventPanel: React.FC<EventPanelProps> = ({ onSelectEvent }) => {
+const EventPanel: React.FC<EventPanelProps> = ({ onSelectEvent, onSearch }) => {
 	const [events, setEvents] = useState<{ data: Event[]; count: number }>({
 		data: [],
 		count: 0,
 	});
 	const [isSearching, setIsSearching] = useState<boolean>(false);
 
+	useEffect(() => {
+		setHeaderHeight();
+	}, []);
+
 	const handleSearch = async (topic: string) => {
 		setIsSearching(true);
 		try {
+			if (onSearch) {
+				const searchResults = await onSearch(topic);
+				setEvents({
+					data: searchResults,
+					count: searchResults.length,
+				});
+				return;
+			}
+
 			const response = await fetch(
 				`/api/events/?topic=${encodeURIComponent(topic)}`,
 			);
@@ -35,13 +50,13 @@ const EventPanel: React.FC<EventPanelProps> = ({ onSelectEvent }) => {
 	};
 
 	return (
-		<div className="bg-amber-50 border-2 border-amber-700 rounded-lg mb-4 h-auto overflow-hidden grid grid-rows-[auto,auto,1fr]">
-			<div className="grid grid-cols-[1fr,auto] gap-4 items-center border-b border-amber-700 dark:border-amber-800 pb-2 px-4 pt-3">
-				<h2 className="text-lg font-semibold text-stone-800 dark:text-amber-100">
+		<div className="bg-amber-50 border-b border-amber-700 h-full grid grid-rows-[auto,auto,1fr] overflow-hidden">
+			<div className="grid grid-cols-[1fr,auto] gap-4 items-center border-b border-amber-700 p-4">
+				<h2 className="text-lg font-semibold text-stone-800">
 					Your Path Through History
 				</h2>
 				{events?.data?.length > 0 && (
-					<span className="text-xs text-stone-600 dark:text-amber-300">
+					<span className="text-xs text-stone-600">
 						{events.count} events
 					</span>
 				)}

@@ -16,12 +16,10 @@ export default function RootLayout({
 }>) {
 	return (
 		<html lang="en" className="h-full">
-			<body className="antialiased bg-white dark:bg-stone-900 text-stone-800 dark:text-amber-100 h-full font-serif">
+			<body className="antialiased bg-white text-stone-800 h-full font-serif">
 				<div className="grid grid-cols-1 grid-rows-[auto_1fr] min-h-screen">
 					<Header />
-					<main className="bg-gray-900 text-white">
-						{children}
-					</main>
+					<main className="bg-gray-900 text-white">{children}</main>
 				</div>
 			</body>
 		</html>

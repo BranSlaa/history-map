@@ -56,14 +56,12 @@ const InformationPanel: React.FC<InformationPanelProps> = ({
 				</p>
 			</div>
 
-			{onFetchMore && (
-				<button
-					onClick={onFetchMore}
-					className="mt-auto py-2 px-4 bg-amber-700 hover:bg-amber-800 text-white font-medium rounded-lg transition-colors self-start"
-				>
-					Explore Related Events
-				</button>
-			)}
+			<button
+				onClick={onFetchMore}
+				className="mt-auto py-2 px-4 bg-amber-700 hover:bg-amber-800 text-white font-medium rounded-lg transition-colors self-start"
+			>
+				Explore Related Events
+			</button>
 		</div>
 	);
 };

@@ -2,24 +2,26 @@ import React, { useState, useEffect } from 'react';
 import EventPanel from './EventPanel';
 import InformationPanel from './InformationPanel';
 import { Event } from '@/types/event';
+
 interface SidebarProps {
 	className?: string;
+	selectedEvent?: Event | null;
+	onEventSelect?: (event: Event) => void;
+	onSearch?: (query: string) => Promise<Event[]>;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ className }) => {
-	const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-	const [headerHeight, setHeaderHeight] = useState<number>(0);
-	useEffect(() => {
-		setHeaderHeight(document.querySelector('header')?.clientHeight || 0);
-	}, []);
+const Sidebar: React.FC<SidebarProps> = ({
+	className = '',
+	selectedEvent = null,
+	onEventSelect = () => {},
+	onSearch = async () => [],
+}) => {
 	return (
 		<div
-			className={`relative overflow-hidden m-h-[calc(50vh-${headerHeight}px)] ${className}`}
+			className={`grid grid-rows-[1fr,1fr] h-full overflow-hidden ${className}`}
 		>
-			<div className="flex-1 overflow-auto p-4 h-full">
-				<EventPanel onSelectEvent={event => setSelectedEvent(event)} />
-				<InformationPanel event={selectedEvent} />
-			</div>
+			<EventPanel onSelectEvent={onEventSelect} onSearch={onSearch} />
+			<InformationPanel event={selectedEvent} />
 		</div>
 	);
 };
