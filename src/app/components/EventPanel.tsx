@@ -50,18 +50,7 @@ const EventPanel: React.FC<EventPanelProps> = ({ onSelectEvent, onSearch }) => {
 	};
 
 	return (
-		<div className="bg-amber-50 border-b border-amber-700 h-full grid grid-rows-[auto,auto,1fr] overflow-hidden">
-			<div className="grid grid-cols-[1fr,auto] gap-4 items-center border-b border-amber-700 p-4">
-				<h2 className="text-lg font-semibold text-stone-800">
-					Your Path Through History
-				</h2>
-				{events?.data?.length > 0 && (
-					<span className="text-xs text-stone-600">
-						{events.count} events
-					</span>
-				)}
-			</div>
-
+		<div className="bg-amber-50 border-b border-amber-700">
 			<EventSearch onSearch={handleSearch} isSearching={isSearching} />
 
 			<EventList events={events} onEventClick={handleEventClick} />

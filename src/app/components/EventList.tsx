@@ -39,7 +39,7 @@ const EventList: React.FC<EventListProps> = ({ events, onEventClick }) => {
 
 	return (
 		<div className="flex-grow overflow-y-auto h-full">
-			<ul className="list-none p-3 h-full">
+			<ul className="list-none h-full">
 				{events.data &&
 					events.data.length > 0 &&
 					events.data.map(event => renderEventItem(event))}

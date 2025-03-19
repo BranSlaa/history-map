@@ -64,8 +64,12 @@ const App = () => {
 			setLoading(true);
 			try {
 				const response = await fetch(
-					`/api/events/search?query=${encodeURIComponent(query)}`,
+					`/api/v1/events?topic=${encodeURIComponent(query)}`,
 				);
+
+				if (response.status === 404) {
+					return [];
+				}
 
 				if (!response.ok) {
 					throw new Error('Failed to search events');
@@ -73,10 +77,9 @@ const App = () => {
 
 				const data = await response.json();
 
-				if (data.events && Array.isArray(data.events)) {
-					const newEvents = data.events.slice(0, 2);
-					handleSearchResults(newEvents);
-					return newEvents;
+				if (data.data && Array.isArray(data.data)) {
+					handleSearchResults(data.data);
+					return data.data;
 				}
 				return [];
 			} catch (error) {

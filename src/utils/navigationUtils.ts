@@ -17,11 +17,8 @@ export const handleContinueExploration = (
 	addEventToList: (event: Event, events: Event[]) => Event[],
 ) => {
 	if (lastEvent) {
-		console.log('Continuing exploration with event:', lastEvent.title);
-
 		// If we don't have any current events, set the last event as the current event
 		if (currentEvents.length === 0) {
-			console.log('Setting last event as current event');
 			setCurrentEvents([lastEvent]);
 		}
 
@@ -38,23 +35,12 @@ export const handleContinueExploration = (
 			lastEvent.title,
 			lastEvent.year,
 			newEvents => {
-				console.log(
-					`Found ${newEvents.length} additional events to display with ${lastEvent.title}`,
-				);
 				if (newEvents.length === 0) {
-					// If no related events found, try a more general search
-					console.log(
-						'No related events found, trying a more general search',
-					);
 					fetchEventsCallback(
 						lastEvent.subject,
 						'',
 						undefined,
-						generalEvents => {
-							console.log(
-								`Found ${generalEvents.length} general events for subject ${lastEvent.subject}`,
-							);
-						},
+						undefined,
 						true, // This is an additional event fetch
 					);
 				}
@@ -84,4 +70,4 @@ export const handleNewSearch = (
 
 	// Hide the welcome back dialog
 	setShowWelcomeBack(false);
-}; 
+};

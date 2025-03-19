@@ -21,7 +21,7 @@ const InformationPanel: React.FC<InformationPanelProps> = ({
 	}
 
 	return (
-		<div className="bg-amber-50 dark:bg-stone-900 border-2 border-amber-700 dark:border-amber-800 rounded-lg shadow-md p-4 h-auto flex flex-col">
+		<div className="bg-amber-50 dark:bg-stone-900 border-2 shadow-md p-4 h-auto flex flex-col">
 			<h2 className="text-xl font-bold mb-2 text-stone-800 dark:text-amber-100">
 				{event.title}
 			</h2>
@@ -47,7 +47,7 @@ const InformationPanel: React.FC<InformationPanelProps> = ({
 				</span>
 			</div>
 
-			<div className="overflow-y-auto mb-3 pr-2">
+			<div className="mb-3 pr-2">
 				<h3 className="font-medium text-stone-800 dark:text-amber-100 mb-1">
 					Description:
 				</h3>

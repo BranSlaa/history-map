@@ -17,9 +17,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 	onSearch = async () => [],
 }) => {
 	return (
-		<div
-			className={`grid grid-rows-[1fr,1fr] h-full overflow-hidden ${className}`}
-		>
+		<div className={`${className}`}>
 			<EventPanel onSelectEvent={onEventSelect} onSearch={onSearch} />
 			<InformationPanel event={selectedEvent} />
 		</div>

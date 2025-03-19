@@ -7,14 +7,6 @@ const SubjectFilterBar: React.FC<{
 	const [showDropdown, setShowDropdown] = useState(true); // Always show on mobile initially
 	const [selectedSubject, setSelectedSubject] = useState<string | null>(null);
 
-	// Debug - only log in development, not in production
-	useEffect(() => {
-		console.log(
-			'SubjectFilterBar received subjects:',
-			subjects?.length || 0,
-		);
-	}, [subjects]);
-
 	const handleSelectChange = useCallback(
 		(e: React.ChangeEvent<HTMLSelectElement>) => {
 			const value = e.target.value;
