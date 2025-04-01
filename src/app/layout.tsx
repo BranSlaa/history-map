@@ -17,9 +17,11 @@ export default function RootLayout({
 	return (
 		<html lang="en" className="h-full">
 			<body className="antialiased bg-white text-stone-800 h-full font-serif">
-				<div className="grid grid-cols-1 grid-rows-[auto_1fr] min-h-screen">
+				<div className="grid grid-cols-[auto_1920px_auto] grid-rows-[auto_1fr] min-h-screen">
 					<Header />
-					<main className="bg-gray-900 text-white">{children}</main>
+					<main className="bg-gray-900 text-white col-start-2 col-span-1">
+						{children}
+					</main>
 				</div>
 			</body>
 		</html>

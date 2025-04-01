@@ -8,6 +8,8 @@ import { Event } from '@/types/event';
 import { MapComponent } from './components/Map';
 import Sidebar from './components/Sidebar';
 import { setHeaderHeight } from './utils/headerHeight';
+import { HistoryPath } from './components/HistoryPath';
+import EventList from './components/EventList';
 
 const App = () => {
 	const [events, setEvents] = useState<Event[]>([]);
@@ -93,14 +95,8 @@ const App = () => {
 	);
 
 	return (
-		<div className="grid grid-cols-1 md:grid-cols-[300px,1fr] grid-rows-[calc(50vh-var(--header-height)),50vh] md:grid-rows-1 h-full max-h-[calc(100vh-var(--header-height))]">
-			<Sidebar
-				className=""
-				selectedEvent={selectedEvent}
-				onEventSelect={handleEventSelection}
-				onSearch={searchEvents}
-			/>
-			<div className="col-span-1 md:col-span-1 row-span-1 h-full">
+		<div className="h-full grid grid-cols-1 grid-rows-1 ">
+			<div className="relative max-h-[600px] w-full h-full">
 				{!loading ? (
 					<MapComponent
 						events={events}
@@ -117,6 +113,11 @@ const App = () => {
 					</div>
 				)}
 			</div>
+			<EventList
+				events={{ data: events, count: events.length }}
+				onEventClick={handleEventSelection}
+			/>
+			<HistoryPath />
 		</div>
 	);
 };

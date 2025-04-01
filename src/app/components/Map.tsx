@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Event } from '@/types/event';
 import 'leaflet/dist/leaflet.css';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import SubjectFilterBar from '@/app/components/SubjectFilterBar';
 
@@ -26,6 +26,46 @@ interface MapComponentProps {
 interface LeafletIconDefault extends L.Icon.Default {
 	_getIconUrl?: () => string;
 }
+
+// Helper component to initialize map view
+const InitializeMapView: React.FC<{
+	center: [number, number];
+	zoom: number;
+	events: Event[];
+}> = ({ center, zoom, events }) => {
+	const map = useMap();
+
+	useEffect(() => {
+		map.setView(center, zoom);
+	}, [center, zoom, map]);
+
+	useEffect(() => {
+		if (events.length > 0) {
+			try {
+				const validPoints = events
+					.map(event => {
+						const lat = event.latitude || event.lat;
+						const lng = event.longitude || event.lon;
+						return lat && lng
+							? ([lat, lng] as L.LatLngTuple)
+							: null;
+					})
+					.filter((point): point is L.LatLngTuple => point !== null);
+
+				if (validPoints.length > 0) {
+					const bounds = L.latLngBounds(validPoints);
+					if (bounds.isValid()) {
+						map.fitBounds(bounds, { padding: [50, 50] });
+					}
+				}
+			} catch (error) {
+				console.error('Error adjusting map view:', error);
+			}
+		}
+	}, [events, map]);
+
+	return null;
+};
 
 export const MapComponent: React.FC<MapComponentProps> = ({
 	events = [],
@@ -85,50 +125,44 @@ export const MapComponent: React.FC<MapComponentProps> = ({
 	}, []);
 
 	return (
-		<div className="h-full w-full relative">
-			{uniqueSubjects.length > 0 && (
-				<div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10">
-					<SubjectFilterBar
-						subjects={uniqueSubjects}
-						onFilterChange={handleFilterChange}
-					/>
-				</div>
-			)}
-
-			<MapContainer
+		<MapContainer
+			center={initialCenter}
+			zoom={initialZoom}
+			scrollWheelZoom={true}
+			style={{ height: '100%', width: '100%' }}
+			attributionControl={false}
+			ref={mapRef}
+		>
+			<InitializeMapView
 				center={initialCenter}
 				zoom={initialZoom}
-				scrollWheelZoom={true}
-				style={{ height: '100%', width: '100%' }}
-				attributionControl={false}
-				ref={mapRef}
-			>
-				<TileLayer
-					url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-					attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-				/>
-				{filteredEvents.map(event => (
-					<Marker
-						key={event.id}
-						position={[
-							event.latitude || event.lat,
-							event.longitude || event.lon,
-						]}
-						eventHandlers={{
-							click: () => onSelectEvent?.(event),
-						}}
-					>
-						<Popup>
-							<div>
-								<h3 className="font-semibold text-lg">
-									{event.title}
-								</h3>
-								<p>{event.year}</p>
-							</div>
-						</Popup>
-					</Marker>
-				))}
-			</MapContainer>
-		</div>
+				events={events}
+			/>
+			<TileLayer
+				url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+				attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+			/>
+			{filteredEvents.map(event => (
+				<Marker
+					key={event.id}
+					position={[
+						event.latitude || event.lat,
+						event.longitude || event.lon,
+					]}
+					eventHandlers={{
+						click: () => onSelectEvent?.(event),
+					}}
+				>
+					<Popup>
+						<div>
+							<h3 className="font-semibold text-lg">
+								{event.title}
+							</h3>
+							<p>{event.year}</p>
+						</div>
+					</Popup>
+				</Marker>
+			))}
+		</MapContainer>
 	);
 };

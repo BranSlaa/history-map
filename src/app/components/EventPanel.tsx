@@ -5,15 +5,12 @@ import EventList from './EventList';
 import { setHeaderHeight } from '../utils/headerHeight';
 
 interface EventPanelProps {
+	events: Event[];
 	onSelectEvent: (event: Event) => void;
 	onSearch?: (query: string) => Promise<Event[]>;
 }
 
-const EventPanel: React.FC<EventPanelProps> = ({ onSelectEvent, onSearch }) => {
-	const [events, setEvents] = useState<{ data: Event[]; count: number }>({
-		data: [],
-		count: 0,
-	});
+const EventPanel: React.FC<EventPanelProps> = ({ events, onSelectEvent }) => {
 	const [isSearching, setIsSearching] = useState<boolean>(false);
 
 	useEffect(() => {
@@ -52,8 +49,6 @@ const EventPanel: React.FC<EventPanelProps> = ({ onSelectEvent, onSearch }) => {
 	return (
 		<div className="bg-amber-50 border-b border-amber-700">
 			<EventSearch onSearch={handleSearch} isSearching={isSearching} />
-
-			<EventList events={events} onEventClick={handleEventClick} />
 		</div>
 	);
 };

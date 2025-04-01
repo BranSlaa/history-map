@@ -7,7 +7,7 @@ export const Header: React.FC = () => {
 	return (
 		<header
 			id="header"
-			className="flex justify-between items-center p-4 h-16 bg-amber-50/95 dark:bg-stone-900/95 backdrop-blur-md border-b-2 border-amber-700 dark:border-amber-800 shadow-sm dark:shadow-none sticky top-0 z-50 w-full"
+			className="flex justify-between items-center p-4 h-16 bg-amber-50/95 dark:bg-stone-900/95 backdrop-blur-md border-b-2 border-amber-700 dark:border-amber-800 shadow-sm dark:shadow-none sticky top-0 z-50 w-full col-span-3"
 		>
 			<div className="flex items-center">
 				<Link
