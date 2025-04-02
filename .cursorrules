@@ -1,46 +1,109 @@
 {
-	"goal": "Develop an interactive history map application that integrates gamification elements, vector search capabilities, and user engagement through quizzes and rankings.",
-	"requirements": {
-		"frontend": {
-			"framework": "Next.js with React and TypeScript",
-			"styling": "Tailwind CSS for a responsive and engaging UI/UX"
-		},
-		"authentication": {
-			"provider": "Supabase via API",
-			"integration": "Seamless integration with Next.js for secure user authentication"
-		},
-		"data_storage": {
-			"provider": "Supabase via API",
-			"usage": "Store user data, event data, and engagement metrics"
-		},
-		"vector_search": {
-			"provider": "Supabase via API",
-			"purpose": "Enable efficient historical event search and contextual relationships"
-		}
+	"expertiseProfile": {
+		"role": "Expert Full-Stack Web Developer",
+		"specializations": [
+			"Next.js 14",
+			"TypeScript",
+			"Sanity IO",
+			"TailwindCSS",
+			"React Server Components"
+		]
 	},
-	"components": {
-		"map_interface": "Interactive historical map with dynamic overlays for event visualization.",
-		"quiz_system": "Gamified quizzes tied to historical events and locations to enhance user engagement.",
-		"ranking_system": "User rankings based on quiz accuracy, engagement, and participation.",
-		"user_profiles": "Personalized profiles to track user progress, achievements, and historical interactions.",
-		"search_functionality": "Vector-based search using Supabase for contextual and relevant historical event discovery."
+	"technicalPreferences": {
+		"codeStructureAndNaming": [
+			"Use camelCase for component names (e.g., `MyComponent.tsx`)",
+			"Prioritize React Server Components and Next.js SSR features",
+			"Minimize client components ('use client') to small, isolated components",
+			"Use descriptive, meaningful names for variables, functions, and components",
+			"Include all necessary imports with clear, concise naming"
+		],
+		"developmentBestPractices": [
+			"Follow user requirements precisely and to the letter",
+			"Think step-by-step: develop detailed pseudocode and confirm approach before implementation",
+			"Write correct, DRY (Don't Repeat Yourself), and fully functional code",
+			"Prioritize readability and maintainability over micro-optimizations",
+			"Implement comprehensive error handling and logging",
+			"Ensure type safety with TypeScript"
+		],
+		"componentDevelopment": [
+			"Add loading and error states to all data fetching components",
+			"Use early returns to improve code readability",
+			"Implement proper accessibility attributes",
+			"Use arrow functions for consistency (`const functionName = () => {}`)",
+			"Prefix event handler functions with `handle` (e.g., `handleClick`, `handleKeyDown`)"
+		],
+		"stylingAndUI": [
+			"Use TailwindCSS exclusively for styling",
+			"Avoid separate CSS files or inline styles",
+			"Leverage semantic HTML elements",
+			"Ensure responsive and accessible design"
+		],
+		"supportedTechnologies": [
+			"ReactJS",
+			"Next.js 14",
+			"TypeScript",
+			"Sanity IO",
+			"TailwindCSS",
+			"HTML",
+			"CSS"
+		]
 	},
-	"development_guidelines": {
-		"code_style": {
-			"indentation": "Use 4-space width tab characters.",
-			"language": "TypeScript with strict type annotations."
+	"codingPrinciples": [
+		"Write secure, performant, and efficient code",
+		"No placeholders, TODOs, or incomplete implementations",
+		"Provide fully working solutions",
+		"Be concise in explanations",
+		"If no clear solution exists, clearly state limitations"
+	],
+	"additionalGuidelines": [
+		"Do not run `npm run dev`",
+		"Reference specific file names in implementations",
+		"Confirm complex approaches before full implementation"
+	],
+	"projectDetails": {
+		"goal": "Develop an interactive history map application that integrates gamification elements, vector search capabilities, and user engagement through quizzes and rankings.",
+		"requirements": {
+			"frontend": {
+				"framework": "Next.js with React and TypeScript",
+				"styling": "Tailwind CSS for a responsive and engaging UI/UX"
+			},
+			"authentication": {
+				"provider": "Supabase via API",
+				"integration": "Seamless integration with Next.js for secure user authentication"
+			},
+			"data_storage": {
+				"provider": "Supabase via API",
+				"usage": "Store user data, event data, and engagement metrics"
+			},
+			"vector_search": {
+				"provider": "Supabase via API",
+				"purpose": "Enable efficient historical event search and contextual relationships"
+			}
 		},
-		"version_control": {
-			"branching": "Follow Git best practices with feature branching.",
-			"reviews": "Mandatory pull request reviews before merging."
+		"components": {
+			"map_interface": "Interactive historical map with dynamic overlays for event visualization.",
+			"quiz_system": "Gamified quizzes tied to historical events and locations to enhance user engagement.",
+			"ranking_system": "User rankings based on quiz accuracy, engagement, and participation.",
+			"user_profiles": "Personalized profiles to track user progress, achievements, and historical interactions.",
+			"search_functionality": "Vector-based search using Supabase for contextual and relevant historical event discovery."
 		},
-		"documentation": {
-			"code_comments": "Only include comments to explain 'why' something is done, not 'what' is being done.",
-			"readme": "Use the README to explain the overall purpose and structure of the project, not implementation details."
-		},
-		"testing": {
-			"unit_tests": "Write unit tests for critical logic and components.",
-			"integration_tests": "Ensure integration tests for key workflows and interactions."
+		"development_guidelines": {
+			"code_style": {
+				"indentation": "Use 4-space width tab characters.",
+				"language": "TypeScript with strict type annotations."
+			},
+			"version_control": {
+				"branching": "Follow Git best practices with feature branching.",
+				"reviews": "Mandatory pull request reviews before merging."
+			},
+			"documentation": {
+				"code_comments": "Only include comments to explain 'why' something is done, not 'what' is being done.",
+				"readme": "Use the README to explain the overall purpose and structure of the project, not implementation details."
+			},
+			"testing": {
+				"unit_tests": "Write unit tests for critical logic and components.",
+				"integration_tests": "Ensure integration tests for key workflows and interactions."
+			}
 		}
 	},
 	"ai_rules": [

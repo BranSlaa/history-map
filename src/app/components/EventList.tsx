@@ -12,12 +12,11 @@ interface EventListProps {
 const EventList: React.FC<EventListProps> = ({ events, onEventClick }) => {
 	const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
 	const renderEventItem = (event: Event) => (
-		<li
+		<button
 			key={`${event.id}`}
-			className={`cursor-pointer p-2 mb-2 border-2 border-transparent hover:bg-amber-100 transition-colors
-				${event.id === selectedEvent?.id ? 'border-dashed border-green-800 bg-green-100' : 'border-b-amber-700'}
+			className={`text-left cursor-pointer p-2 border-dashed border-2 hover:bg-green-100 transition-colors transition-border
+				${event.id === selectedEvent?.id ? 'bg-green-100 border-green-800' : 'bg-amber-50 border-transparent'}
 				`}
-			role="button"
 			tabIndex={0}
 			onClick={() => {
 				setSelectedEvent(event);
@@ -25,25 +24,48 @@ const EventList: React.FC<EventListProps> = ({ events, onEventClick }) => {
 			}}
 		>
 			<div className="grid grid-cols-[1fr,auto] gap-2 items-center">
-				<span className="text-stone-800">{event.title}</span>
-				<span className="text-xs text-stone-600">{event.year}</span>
+				<span className="text-stone-800 text-lg">{event.title}</span>
 			</div>
-			<div className="text-xs mt-1 text-stone-600 opacity-70">
-				{event.subject
-					.split('-')
-					.map(word => word.charAt(0).toUpperCase() + word.slice(1))
-					.join(' ')}
+			<div className="flex flex-col gap-1">
+				{event.year && (
+					<div className="text-sm text-black font-bold">
+						Year:{' '}
+						<span className="text-sm text-amber-600 font-bold">
+							{event.year}
+						</span>
+					</div>
+				)}
+				{event.subject && (
+					<div className="text-sm text-black font-bold">
+						Subject:{' '}
+						<span className="text-sm text-amber-600 font-bold">
+							{event.subject
+								.split('-')
+								.map(
+									word =>
+										word.charAt(0).toUpperCase() +
+										word.slice(1),
+								)
+								.join(' ')}
+						</span>
+					</div>
+				)}
 			</div>
-		</li>
+			{event.id === selectedEvent?.id && (
+				<div className="text-sm mt-1 text-black opacity-70">
+					{event.description}
+				</div>
+			)}
+		</button>
 	);
 
 	return (
 		<div className="flex-grow overflow-y-auto h-full">
-			<ul className="list-none h-full">
+			<div className="gap-2 flex flex-col">
 				{events.data &&
 					events.data.length > 0 &&
 					events.data.map(event => renderEventItem(event))}
-			</ul>
+			</div>
 		</div>
 	);
 };

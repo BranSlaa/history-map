@@ -107,26 +107,6 @@ export const lightTheme: Theme = {
 	},
 };
 
-// Dark theme
-export const darkTheme: Theme = {
-	...lightTheme,
-	colors: {
-		...lightTheme.colors,
-		background: '#0f172a', // Deeper, more modern dark blue
-		foreground: '#f3f4f6',
-		accent: '#60a5fa', // Lighter blue for dark mode
-		accentDark: '#3b82f6',
-		accentLight: '#1e293b',
-		gray: {
-			100: '#1e293b',
-			200: '#334155',
-			300: '#475569',
-			400: '#64748b',
-			500: '#94a3b8',
-		},
-	},
-};
-
 // Using a more specific type for our styles that's compatible with React
 export type StylesMap = Record<string, CSSProperties>;
 
